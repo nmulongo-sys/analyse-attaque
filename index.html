@@ -176,7 +176,7 @@ code{background:var(--creme2);padding:.05em .3em;border-radius:2px;font-size:.85
 
 <section>
   <h2>Placement <span class="note">écart à la grille</span></h2>
-  <canvas id="cvCible" height="260"></canvas>
+  <canvas id="cvCible" height="260" data-h="260"></canvas>
   <div class="legende">
     <span><i style="background:var(--avance)"></i>en avance</span>
     <span><i style="background:var(--cible)"></i>dans la fenêtre (±25 ms)</span>
@@ -187,7 +187,7 @@ code{background:var(--creme2);padding:.05em .3em;border-radius:2px;font-size:.85
 
 <section>
   <h2>Attaques détectées <span class="note">flux spectral</span></h2>
-  <canvas id="cvFlux" height="150"></canvas>
+  <canvas id="cvFlux" height="150" data-h="150"></canvas>
   <div class="rangee" style="margin-top:.7rem">
     <div class="curseur">
       <label for="sens">Sensibilité de détection <span class="val" id="sensVal">2,50</span></label>
@@ -208,7 +208,7 @@ code{background:var(--creme2);padding:.05em .3em;border-radius:2px;font-size:.85
 
 <section>
   <h2>Dynamique <span class="note">intensité par attaque</span></h2>
-  <canvas id="cvDyn" height="150"></canvas>
+  <canvas id="cvDyn" height="150" data-h="150"></canvas>
   <div class="legende">
     <span>hauteur = intensité crête de l'attaque, en dB relatifs</span>
     <span>couleur = position dans la mesure</span>
@@ -217,7 +217,7 @@ code{background:var(--creme2);padding:.05em .3em;border-radius:2px;font-size:.85
 
 <section>
   <h2>Profil d'accentuation <span class="note">moyenne par position</span></h2>
-  <canvas id="cvProfil" height="170"></canvas>
+  <canvas id="cvProfil" height="170" data-h="170"></canvas>
   <p class="etat" id="etatProfil">En attente de mesures.</p>
 </section>
 
@@ -463,6 +463,7 @@ const E = {
   odf:[], seuil:[],   // historique pour la courbe
   odfMax:0.02,
   niveau:0, crete:0,
+  maj:true,           // un graphique de mesure doit être redessiné
   timer:null
 };
 const PARAM = {tempo:80, subdiv:2, mesure:4, clic:1, offset:0, sens:2.5, ioi:0.055};
@@ -471,17 +472,23 @@ const ODF_MAX = 760;                   // ~4 s d'historique de courbe
 const $ = id => document.getElementById(id);
 
 // ---------------------------------------------------------------- canevas
+// La hauteur voulue est figée au premier appel dans un dataset : on ne peut pas
+// la relire dans l'attribut `height`, puisque écrire cv.height (taille du tampon
+// de rendu) se reflète dans ce même attribut — on remultiplierait à chaque image.
 function prepare(cv){
-  const r = window.devicePixelRatio || 1;
-  const l = cv.clientWidth;
-  const h = parseInt(cv.getAttribute('height'), 10);
-  if(cv.width !== Math.round(l*r) || cv.height !== Math.round(h*r)){
-    cv.width = Math.round(l*r); cv.height = Math.round(h*r);
+  const r = Math.min(window.devicePixelRatio || 1, 2);
+  if(!cv.dataset.h) cv.dataset.h = cv.getAttribute('height') || '150';
+  const H = parseInt(cv.dataset.h, 10);
+  const L = Math.max(1, Math.round(cv.clientWidth));
+  const bw = Math.round(L*r), bh = Math.round(H*r);
+  if(cv.width !== bw || cv.height !== bh){
+    cv.width = bw; cv.height = bh;
+    cv.style.height = H + 'px';
   }
   const c = cv.getContext('2d');
   c.setTransform(r,0,0,r,0,0);
-  c.clearRect(0,0,l,h);
-  return {c, L:l, H:h};
+  c.clearRect(0,0,L,H);
+  return {c, L:L, H:H};
 }
 const COUL = {
   fond:'#fdfaf4', trait:'#d9c9b1', encre:'#382d24', encre2:'#6e5c4b',
@@ -579,6 +586,7 @@ function enregistrer(d){
   const db = 20 * Math.log10(Math.max(d.crete, 1e-6));
   E.onsets.push({t:d.t, k:k, dev:dev, pos:pos, db:db, force:d.force});
   if(E.onsets.length > 600) E.onsets.shift();
+  E.maj = true;
 }
 
 function recalculer(){
@@ -591,6 +599,7 @@ function recalculer(){
     o.dev = t - (E.ancre + k*pas);
     o.pos = ((k % parMes) + parMes) % parMes;
   }
+  E.maj = true;
 }
 
 // ---------------------------------------------------------------- métronome
@@ -850,11 +859,21 @@ function bilan(){
   $('dyn').textContent = (Math.max.apply(null,dbs) - Math.min.apply(null,dbs)).toFixed(1).replace('.',',');
 }
 
-function boucle(){
-  dessinerCible(); dessinerFlux(); dessinerDyn(); dessinerProfil(); bilan();
-  if(E.actif){
-    const pc = Math.min(100, E.crete*100);
-    $('vuNiveau').style.width = pc.toFixed(0) + '%';
+let tFlux = 0, tVu = 0;
+function boucle(t){
+  t = t || 0;
+  // Bandeau de flux : seul élément réellement animé, plafonné à ~30 images/s.
+  // Les trois autres graphiques ne changent qu'à l'arrivée d'une attaque ou d'un
+  // réglage — les redessiner à 60 Hz ne servait qu'à chauffer le téléphone.
+  if(E.actif && t - tFlux > 33){ tFlux = t; dessinerFlux(); }
+  if(E.maj){
+    E.maj = false;
+    dessinerCible(); dessinerDyn(); dessinerProfil(); bilan();
+    if(!E.actif) dessinerFlux();
+  }
+  if(E.actif && t - tVu > 66){
+    tVu = t;
+    $('vuNiveau').style.width = Math.min(100, E.crete*100).toFixed(0) + '%';
     $('alerteSat').hidden = E.crete < 0.97;
   }
   requestAnimationFrame(boucle);
@@ -907,6 +926,7 @@ $('btnRaz').addEventListener('click', () => {
   E.onsets = [];
   if(E.ctx) E.ancre = E.ctx.currentTime + 0.05;
   if(E.metro){ E.k = 0; E.prochain = E.ancre; }
+  E.maj = true;
   etat('Mesures effacées. La grille repart de maintenant.');
 });
 $('btnCaler').addEventListener('click', caler);
@@ -937,6 +957,15 @@ $('ioi').addEventListener('input', e => {
   $('ioiVal').textContent = e.target.value + ' ms';
   if(E.worklet) E.worklet.port.postMessage({minIOI:PARAM.ioi});
 });
+
+// rotation ou changement de largeur : le canevas est réalloué, donc effacé
+let tRedim = null;
+function redimensionne(){
+  clearTimeout(tRedim);
+  tRedim = setTimeout(() => { E.maj = true; }, 120);
+}
+window.addEventListener('resize', redimensionne);
+window.addEventListener('orientationchange', redimensionne);
 
 requestAnimationFrame(boucle);
 </script>
