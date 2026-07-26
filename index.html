@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Analyse d'attaque — guitare</title>
+<style>
+:root{
+  --creme:#f4ece0;
+  --creme2:#eadfcd;
+  --papier:#fbf6ee;
+  --encre:#382d24;
+  --encre2:#6e5c4b;
+  --trait:#d9c9b1;
+  --or:#b8860b;
+  --or-clair:#d9a93f;
+  --sepia:#8b6f4e;
+  --avance:#4a6b8a;
+  --retard:#a8543a;
+  --cible:#6b8f5a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--creme);
+  color:var(--encre);
+  font-family:'Work Sans','Segoe UI',system-ui,sans-serif;
+  font-size:15px;
+  line-height:1.5;
+  -webkit-text-size-adjust:100%;
+  padding:0 0 3rem;
+}
+header{
+  padding:1.4rem 1rem .9rem;
+  border-bottom:1px solid var(--trait);
+  background:var(--papier);
+}
+h1{
+  font-family:'Cormorant Garamond',Georgia,serif;
+  font-weight:600;
+  font-size:1.9rem;
+  margin:0 0 .15rem;
+  letter-spacing:.01em;
+}
+.sous{font-size:.82rem;color:var(--encre2);margin:0}
+main{max-width:900px;margin:0 auto;padding:0 .8rem}
+section{
+  background:var(--papier);
+  border:1px solid var(--trait);
+  border-radius:3px;
+  margin:.9rem 0;
+  padding:.85rem .9rem 1rem;
+}
+h2{
+  font-family:'Cormorant Garamond',Georgia,serif;
+  font-size:1.15rem;font-weight:600;
+  margin:0 0 .6rem;
+  padding-bottom:.35rem;
+  border-bottom:1px solid var(--trait);
+  display:flex;justify-content:space-between;align-items:baseline;gap:.5rem;
+}
+h2 .note{font-family:'Work Sans',sans-serif;font-size:.7rem;color:var(--encre2);font-weight:400;text-transform:uppercase;letter-spacing:.08em}
+button{
+  font-family:inherit;font-size:.88rem;
+  background:var(--creme2);color:var(--encre);
+  border:1px solid var(--sepia);border-radius:3px;
+  padding:.55rem .9rem;cursor:pointer;
+  min-height:44px;
+}
+button:hover{background:#e0d2bc}
+button:active{transform:translateY(1px)}
+button:focus-visible{outline:2px solid var(--or);outline-offset:2px}
+button[disabled]{opacity:.4;cursor:not-allowed}
+button.primaire{background:var(--or);border-color:#8a6608;color:#fff8e8;font-weight:500}
+button.primaire:hover{background:#a5780a}
+button.actif{background:var(--cible);border-color:#4d6b40;color:#fff}
+.rangee{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+.champ{display:flex;flex-direction:column;gap:.15rem;min-width:0}
+.champ label{font-size:.68rem;text-transform:uppercase;letter-spacing:.07em;color:var(--encre2)}
+select,input[type=number]{
+  font-family:inherit;font-size:.9rem;padding:.45rem .5rem;
+  background:var(--creme);border:1px solid var(--trait);border-radius:3px;color:var(--encre);
+  min-height:40px;
+}
+input[type=range]{width:100%;accent-color:var(--or);min-height:36px}
+.curseur{flex:1 1 190px;min-width:150px}
+.curseur .val{font-variant-numeric:tabular-nums;color:var(--sepia);font-size:.75rem}
+canvas{display:block;width:100%;border:1px solid var(--trait);border-radius:2px;background:#fdfaf4;touch-action:none}
+.legende{display:flex;flex-wrap:wrap;gap:.8rem;font-size:.72rem;color:var(--encre2);margin-top:.4rem}
+.legende i{display:inline-block;width:.7rem;height:.7rem;border-radius:2px;margin-right:.3rem;vertical-align:-1px}
+.chiffres{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.55rem}
+.chiffre{background:var(--creme);border:1px solid var(--trait);border-radius:3px;padding:.5rem .6rem}
+.chiffre .k{font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--encre2);display:block}
+.chiffre .v{font-family:'Cormorant Garamond',Georgia,serif;font-size:1.55rem;font-variant-numeric:tabular-nums;line-height:1.1}
+.chiffre .u{font-size:.7rem;color:var(--encre2);font-family:'Work Sans',sans-serif}
+.etat{font-size:.8rem;color:var(--encre2);margin:.5rem 0 0;min-height:1.2em}
+.alerte{background:#f7e6dd;border:1px solid var(--retard);color:#6d3221;padding:.5rem .6rem;border-radius:3px;font-size:.82rem;margin:.5rem 0 0}
+.vu{height:9px;background:var(--creme2);border:1px solid var(--trait);border-radius:2px;overflow:hidden;margin-top:.45rem}
+.vu i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cible),var(--or) 70%,var(--retard) 92%);transition:width .06s linear}
+details{margin-top:.7rem;font-size:.85rem}
+summary{cursor:pointer;color:var(--sepia);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}
+details p{color:var(--encre2);margin:.5rem 0}
+code{background:var(--creme2);padding:.05em .3em;border-radius:2px;font-size:.85em}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Analyse d'attaque</h1>
+  <p class="sous">Placement rythmique et dynamique du jeu de guitare — mesure par flux spectral</p>
+</header>
+
+<main>
+
+<section>
+  <h2>Prise de son <span class="note">micro</span></h2>
+  <div class="rangee">
+    <button id="btnMicro" class="primaire">Activer le micro</button>
+    <button id="btnMetro" disabled>Métronome</button>
+    <button id="btnRaz" disabled>Effacer les mesures</button>
+  </div>
+  <div class="vu"><i id="vuNiveau"></i></div>
+  <p class="etat" id="etat">Le micro n'est pas actif. Le navigateur demandera l'autorisation.</p>
+  <div class="alerte" id="alerteSat" hidden>Signal saturé — éloigne la guitare du micro ou baisse le gain d'entrée du système.</div>
+  <details>
+    <summary>Conditions de mesure</summary>
+    <p>Le traitement automatique du micro (réduction de bruit, gain automatique, annulation d'écho) est désactivé à la demande : ces filtres écrasent les nuances de dynamique. Sur Android, certains constructeurs les réimposent malgré tout — les écarts de vélocité seront alors compressés, les temps restent justes.</p>
+    <p>Joue au casque si tu utilises le métronome : le clic capté par le micro est détecté comme une attaque.</p>
+  </details>
+</section>
+
+<section>
+  <h2>Grille <span class="note">référence</span></h2>
+  <div class="rangee">
+    <div class="champ">
+      <label for="tempo">Tempo</label>
+      <input type="number" id="tempo" value="80" min="30" max="240" step="1" style="width:5.5rem">
+    </div>
+    <div class="champ">
+      <label for="subdiv">Subdivision</label>
+      <select id="subdiv">
+        <option value="1">Noires</option>
+        <option value="2" selected>Croches</option>
+        <option value="3">Triolets</option>
+        <option value="4">Doubles</option>
+      </select>
+    </div>
+    <div class="champ">
+      <label for="mesure">Mesure</label>
+      <select id="mesure">
+        <option value="2">2 temps</option>
+        <option value="3">3 temps</option>
+        <option value="4" selected>4 temps</option>
+        <option value="6">6 temps</option>
+      </select>
+    </div>
+    <div class="champ">
+      <label for="clic">Clic</label>
+      <select id="clic">
+        <option value="1" selected>Sur les temps</option>
+        <option value="0">Muet (grille seule)</option>
+        <option value="2">Toutes subdivisions</option>
+      </select>
+    </div>
+  </div>
+  <div class="rangee" style="margin-top:.7rem">
+    <div class="curseur">
+      <label for="offset">Décalage de latence <span class="val" id="offsetVal">0 ms</span></label>
+      <input type="range" id="offset" min="-150" max="150" value="0" step="1">
+    </div>
+    <button id="btnCaler" disabled>Caler sur le jeu</button>
+  </div>
+  <p class="etat">Le décalage compense la latence micro/haut-parleur. Joue une dizaine de temps bien en place puis appuie sur <em>Caler sur le jeu</em> : l'écart moyen est ramené à zéro.</p>
+</section>
+
+<section>
+  <h2>Placement <span class="note">écart à la grille</span></h2>
+  <canvas id="cvCible" height="260"></canvas>
+  <div class="legende">
+    <span><i style="background:var(--avance)"></i>en avance</span>
+    <span><i style="background:var(--cible)"></i>dans la fenêtre (±25 ms)</span>
+    <span><i style="background:var(--retard)"></i>en retard</span>
+    <span>diamètre du point = intensité de l'attaque</span>
+  </div>
+</section>
+
+<section>
+  <h2>Attaques détectées <span class="note">flux spectral</span></h2>
+  <canvas id="cvFlux" height="150"></canvas>
+  <div class="rangee" style="margin-top:.7rem">
+    <div class="curseur">
+      <label for="sens">Sensibilité de détection <span class="val" id="sensVal">2,50</span></label>
+      <input type="range" id="sens" min="1.3" max="4.5" value="2.5" step="0.05">
+    </div>
+    <div class="curseur">
+      <label for="ioi">Écart minimum entre deux attaques <span class="val" id="ioiVal">55 ms</span></label>
+      <input type="range" id="ioi" min="20" max="200" value="55" step="5">
+    </div>
+  </div>
+  <div class="legende">
+    <span>courbe pleine : flux spectral</span>
+    <span>trait clair : seuil adaptatif</span>
+    <span>trait vertical : attaque retenue</span>
+  </div>
+  <p class="etat">Baisse la sensibilité si des attaques sont manquées, monte-la si la résonance ou le bruit déclenche de fausses détections. Sur un jeu très lié (hammer-on, coulés), descends aussi l'écart minimum.</p>
+</section>
+
+<section>
+  <h2>Dynamique <span class="note">intensité par attaque</span></h2>
+  <canvas id="cvDyn" height="150"></canvas>
+  <div class="legende">
+    <span>hauteur = intensité crête de l'attaque, en dB relatifs</span>
+    <span>couleur = position dans la mesure</span>
+  </div>
+</section>
+
+<section>
+  <h2>Profil d'accentuation <span class="note">moyenne par position</span></h2>
+  <canvas id="cvProfil" height="170"></canvas>
+  <p class="etat" id="etatProfil">En attente de mesures.</p>
+</section>
+
+<section>
+  <h2>Bilan</h2>
+  <div class="chiffres">
+    <div class="chiffre"><span class="k">Attaques</span><span class="v" id="nAtt">0</span></div>
+    <div class="chiffre"><span class="k">Écart moyen</span><span class="v" id="biais">—</span><span class="u"> ms</span></div>
+    <div class="chiffre"><span class="k">Régularité (σ)</span><span class="v" id="jitter">—</span><span class="u"> ms</span></div>
+    <div class="chiffre"><span class="k">Dans ±25 ms</span><span class="v" id="pctCible">—</span><span class="u"> %</span></div>
+    <div class="chiffre"><span class="k">Écart dynamique</span><span class="v" id="dyn">—</span><span class="u"> dB</span></div>
+  </div>
+  <p class="etat">L'écart moyen est un biais systématique — il se corrige au décalage de latence. La régularité (écart-type) est la vraie mesure de stabilité rythmique : elle ne se calibre pas.</p>
+  <div class="rangee" style="margin-top:.7rem">
+    <button id="btnExport" disabled>Exporter les mesures (JSON)</button>
+  </div>
+</section>
+
+<section>
+  <h2>Ce que l'outil mesure, et ce qu'il ne mesure pas</h2>
+  <p style="font-size:.86rem;color:var(--encre2);margin:.2rem 0">
+    Mesuré : l'instant d'attaque de chaque événement sonore et son intensité crête. La détection repose sur le flux spectral (montée d'énergie répartie sur le spectre), calculé toutes les 5,3 ms dans un <code>AudioWorklet</code>, avec seuil adaptatif médian.
+  </p>
+  <p style="font-size:.86rem;color:var(--encre2);margin:.5rem 0 0">
+    Non mesuré : la hauteur des notes, l'accord joué, la propreté des cordes. Un accord plaqué compte pour une attaque, pas six. Deux cordes égrenées à moins de l'écart minimum fusionnent en une seule attaque.
+  </p>
+</section>
+
+</main>
+
+<script id="src-worklet" type="text/plain">
+class DetecteurAttaque extends AudioWorkletProcessor {
+  constructor(options){
+    super();
+    const o = options.processorOptions || {};
+    this.N = o.N || 1024;
+    this.HOP = o.HOP || 256;
+    this.sens = o.sens || 2.5;
+    this.minIOI = o.minIOI || 0.055;
+    this.porte = Math.pow(10, -58/20);
+
+    const N = this.N;
+    this.ring = new Float32Array(N);
+    this.w = 0;
+    this.acc = 0;
+    this.re = new Float32Array(N);
+    this.im = new Float32Array(N);
+    this.pic = new Float32Array(N/2).fill(1e-4);   // crête glissante par bande
+    this.precB = new Float32Array(N/2);            // spectre blanchi précédent
+    this.decroit = Math.exp(-(this.HOP/sampleRate)/0.6);
+    this.win = new Float32Array(N);
+    for(let i=0;i<N;i++) this.win[i] = 0.5 - 0.5*Math.cos(2*Math.PI*i/N);
+
+    this.cosT = new Float32Array(N/2);
+    this.sinT = new Float32Array(N/2);
+    for(let i=0;i<N/2;i++){
+      this.cosT[i] = Math.cos(-2*Math.PI*i/N);
+      this.sinT[i] = Math.sin(-2*Math.PI*i/N);
+    }
+    // bande utile : jusqu'à 6 kHz, l'aigu extrême n'apporte que du souffle
+    this.binMax = Math.min(N/2, Math.max(8, Math.floor(6000 / (sampleRate/N))));
+
+    this.hist = new Float32Array(45);
+    this.hi = 0;
+    this.tri = new Float32Array(45);
+
+    this.f0 = 0; this.f1 = 0; this.f2 = 0;
+    this.thr1 = 0;
+    // les crêtes par bande partent de leur plancher : tant qu'elles n'ont pas
+    // convergé, le flux blanchi n'a pas de sens. ~0,45 s d'échauffement.
+    this.echauffement = Math.ceil(0.45 * sampleRate / this.HOP);
+    this.dernierOnset = -10;
+    this.attente = null;      // onset en attente de mesure de crête
+
+    this.lotFlux = [];
+    this.lotSeuil = [];
+    this.lotT0 = 0;
+
+    this.port.onmessage = (e) => {
+      const d = e.data || {};
+      if(typeof d.sens === 'number') this.sens = d.sens;
+      if(typeof d.minIOI === 'number') this.minIOI = d.minIOI;
+    };
+  }
+
+  fft(){
+    const N = this.N, re = this.re, im = this.im;
+    for(let i=1, j=0; i<N; i++){
+      let bit = N >> 1;
+      for(; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if(i < j){
+        let t = re[i]; re[i] = re[j]; re[j] = t;
+        t = im[i]; im[i] = im[j]; im[j] = t;
+      }
+    }
+    for(let len=2; len<=N; len<<=1){
+      const demi = len >> 1, pas = N / len;
+      for(let i=0; i<N; i+=len){
+        for(let j=0; j<demi; j++){
+          const k = j * pas;
+          const cr = this.cosT[k], ci = this.sinT[k];
+          const a = i + j, b = a + demi;
+          const vr = re[b]*cr - im[b]*ci;
+          const vi = re[b]*ci + im[b]*cr;
+          re[b] = re[a] - vr; im[b] = im[a] - vi;
+          re[a] += vr;        im[a] += vi;
+        }
+      }
+    }
+  }
+
+  mediane(){
+    this.tri.set(this.hist);
+    const a = this.tri;
+    // tri par insertion : 45 éléments, largement suffisant
+    for(let i=1;i<a.length;i++){
+      const v = a[i]; let j = i-1;
+      while(j>=0 && a[j]>v){ a[j+1]=a[j]; j--; }
+      a[j+1] = v;
+    }
+    return a[22];
+  }
+
+  livrer(){
+    const a = this.attente;
+    this.attente = null;
+    if(!a) return;
+    this.port.postMessage({type:'onset', t:a.t, force:a.force, rms:a.rms, crete:a.crete});
+  }
+
+  trame(finEch){
+    const N = this.N, w = this.w;
+    for(let i=0;i<N;i++){
+      this.re[i] = this.ring[(w+i) % N] * this.win[i];
+      this.im[i] = 0;
+    }
+    this.fft();
+
+    // Blanchiment adaptatif : chaque bande est ramenée à sa propre crête récente.
+    // Sans cela, les partiels graves qui battent entre eux pendant la résonance
+    // produisent des montées d'énergie indiscernables d'une vraie attaque.
+    let flux = 0;
+    const ech = 4/N;
+    for(let k=1;k<this.binMax;k++){
+      const mg = Math.hypot(this.re[k], this.im[k]) * ech;
+      const p = Math.max(mg, this.pic[k]*this.decroit, 2e-4);
+      this.pic[k] = p;
+      const b = mg / p;
+      const d = b - this.precB[k];
+      if(d > 0) flux += d;
+      this.precB[k] = b;
+    }
+    flux /= (this.binMax - 1);
+
+    // niveau efficace sur les derniers HOP échantillons, hors fenêtrage
+    let s = 0;
+    for(let i=0;i<this.HOP;i++){
+      const v = this.ring[(w - this.HOP + i + N) % N];
+      s += v*v;
+    }
+    const rms = Math.sqrt(s / this.HOP);
+
+    let crete = 0;
+    for(let i=0;i<this.HOP;i++){
+      const v = Math.abs(this.ring[(w - this.HOP + i + N) % N]);
+      if(v > crete) crete = v;
+    }
+
+    const tFin = finEch / sampleRate;
+
+    // seuil adaptatif
+    const med = this.mediane();
+    const seuil = med * this.sens + 0.0001;
+    this.hist[this.hi] = flux;
+    this.hi = (this.hi + 1) % this.hist.length;
+
+    // décalage des trames : le maximum local est testé sur f1, une trame en arrière
+    this.f2 = this.f1; this.f1 = this.f0; this.f0 = flux;
+    const hop = this.HOP / sampleRate;
+    const t1 = tFin - hop;              // fin de la trame f1
+    const thr1 = this.thr1;             // seuil calculé lors de l'appel précédent
+    this.thr1 = seuil;
+
+    if(this.attente){
+      if(rms > this.attente.rms) this.attente.rms = rms;
+      if(crete > this.attente.crete) this.attente.crete = crete;
+      if(--this.attente.reste <= 0) this.livrer();
+    }
+
+    // Le pic du flux tombe une trame après la première montée d'énergie :
+    // l'attaque se situe donc autour de t1 - hop. Correction mesurée au banc,
+    // biais résiduel < 1 ms. La latence acoustique reste à caler par l'utilisateur.
+    const tAtt = t1 - hop;
+    if(this.echauffement > 0){ this.echauffement--; }
+    else if(rms > this.porte
+       && this.f1 > thr1 && this.f1 > this.f2 && this.f1 >= this.f0
+       && (tAtt - this.dernierOnset) > this.minIOI){
+      if(this.attente) this.livrer();
+      this.dernierOnset = tAtt;
+      this.attente = {t:tAtt, force:this.f1, rms:rms, crete:crete, reste:6};
+    }
+
+    if(this.lotFlux.length === 0) this.lotT0 = tFin;
+    this.lotFlux.push(flux);
+    this.lotSeuil.push(seuil);
+    if(this.lotFlux.length >= 8){
+      this.port.postMessage({type:'trames', flux:this.lotFlux, seuil:this.lotSeuil,
+                             t0:this.lotT0, dt:this.HOP/sampleRate, rms:rms, crete:crete});
+      this.lotFlux = []; this.lotSeuil = [];
+    }
+  }
+
+  process(entrees){
+    const ch = entrees[0] && entrees[0][0];
+    if(!ch) return true;
+    const N = this.N;
+    for(let i=0;i<ch.length;i++){
+      this.ring[this.w] = ch[i];
+      this.w = (this.w + 1) % N;
+      this.acc++;
+      if(this.acc >= this.HOP){
+        this.acc -= this.HOP;
+        this.trame(currentFrame + i + 1);
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('detecteur-attaque', DetecteurAttaque);
+</script>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------- état
+const E = {
+  ctx:null, flux:null, source:null, worklet:null,
+  actif:false, metro:false,
+  ancre:0,            // instant (ctx.currentTime) du temps 1 de la grille
+  prochain:0, k:0,    // ordonnancement du clic
+  onsets:[],          // {t, dev, pos, db, force}
+  odf:[], seuil:[],   // historique pour la courbe
+  odfMax:0.02,
+  niveau:0, crete:0,
+  timer:null
+};
+const PARAM = {tempo:80, subdiv:2, mesure:4, clic:1, offset:0, sens:2.5, ioi:0.055};
+const FEN = 0.025;                     // fenêtre « dans la cible » : ±25 ms
+const ODF_MAX = 760;                   // ~4 s d'historique de courbe
+const $ = id => document.getElementById(id);
+
+// ---------------------------------------------------------------- canevas
+function prepare(cv){
+  const r = window.devicePixelRatio || 1;
+  const l = cv.clientWidth;
+  const h = parseInt(cv.getAttribute('height'), 10);
+  if(cv.width !== Math.round(l*r) || cv.height !== Math.round(h*r)){
+    cv.width = Math.round(l*r); cv.height = Math.round(h*r);
+  }
+  const c = cv.getContext('2d');
+  c.setTransform(r,0,0,r,0,0);
+  c.clearRect(0,0,l,h);
+  return {c, L:l, H:h};
+}
+const COUL = {
+  fond:'#fdfaf4', trait:'#d9c9b1', encre:'#382d24', encre2:'#6e5c4b',
+  or:'#b8860b', sepia:'#8b6f4e',
+  avance:'#4a6b8a', retard:'#a8543a', cible:'#6b8f5a'
+};
+function couleurEcart(dev){
+  if(Math.abs(dev) <= FEN) return COUL.cible;
+  return dev < 0 ? COUL.avance : COUL.retard;
+}
+
+// ---------------------------------------------------------------- audio
+async function demarrer(){
+  try{
+    if(!window.AudioWorkletNode){
+      etat("Ce navigateur ne gère pas AudioWorklet. Chrome ou Firefox à jour sont nécessaires.", true);
+      return;
+    }
+    const flux = await navigator.mediaDevices.getUserMedia({
+      audio:{
+        echoCancellation:false, noiseSuppression:false, autoGainControl:false,
+        channelCount:1
+      }
+    });
+    E.flux = flux;
+    E.ctx = new (window.AudioContext || window.webkitAudioContext)({latencyHint:'interactive'});
+    await E.ctx.resume();
+
+    const src = document.getElementById('src-worklet').textContent;
+    const url = URL.createObjectURL(new Blob([src], {type:'application/javascript'}));
+    await E.ctx.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+
+    E.source = E.ctx.createMediaStreamSource(flux);
+    E.worklet = new AudioWorkletNode(E.ctx, 'detecteur-attaque', {
+      numberOfInputs:1, numberOfOutputs:0, channelCount:1,
+      processorOptions:{N:1024, HOP:256, sens:PARAM.sens, minIOI:PARAM.ioi}
+
+    });
+    E.worklet.port.onmessage = recevoir;
+    E.source.connect(E.worklet);
+
+    E.actif = true;
+    E.ancre = E.ctx.currentTime + 0.15;
+    $('btnMicro').textContent = 'Arrêter le micro';
+    $('btnMicro').classList.remove('primaire');
+    $('btnMetro').disabled = false;
+    $('btnRaz').disabled = false;
+    $('btnCaler').disabled = false;
+    $('btnExport').disabled = false;
+    etat('Micro actif — fréquence d\u2019échantillonnage ' + E.ctx.sampleRate + ' Hz, une trame toutes les '
+         + (256/E.ctx.sampleRate*1000).toFixed(1).replace('.',',') + ' ms.');
+  }catch(err){
+    etat('Micro indisponible : ' + (err && err.message ? err.message : err), true);
+  }
+}
+
+function arreter(){
+  if(E.metro) basculerMetro();
+  if(E.worklet){ E.worklet.port.onmessage = null; E.worklet.disconnect(); E.worklet = null; }
+  if(E.source){ E.source.disconnect(); E.source = null; }
+  if(E.flux){ E.flux.getTracks().forEach(t => t.stop()); E.flux = null; }
+  if(E.ctx){ E.ctx.close(); E.ctx = null; }
+  E.actif = false;
+  $('btnMicro').textContent = 'Activer le micro';
+  $('btnMicro').classList.add('primaire');
+  ['btnMetro','btnRaz','btnCaler','btnExport'].forEach(i => $(i).disabled = true);
+  $('vuNiveau').style.width = '0%';
+  etat('Micro arrêté. Les mesures restent affichées.');
+}
+
+function recevoir(e){
+  const d = e.data;
+  if(d.type === 'trames'){
+    for(let i=0;i<d.flux.length;i++){
+      E.odf.push(d.flux[i]); E.seuil.push(d.seuil[i]);
+      if(d.flux[i] > E.odfMax) E.odfMax = d.flux[i];
+    }
+    while(E.odf.length > ODF_MAX){ E.odf.shift(); E.seuil.shift(); }
+    E.niveau = d.rms; E.crete = d.crete;
+  }else if(d.type === 'onset'){
+    enregistrer(d);
+  }
+}
+
+// ---------------------------------------------------------------- grille
+function pasGrille(){ return 60 / PARAM.tempo / PARAM.subdiv; }
+
+function enregistrer(d){
+  const t = d.t + PARAM.offset/1000;
+  const pas = pasGrille();
+  const k = Math.round((t - E.ancre) / pas);
+  const dev = t - (E.ancre + k*pas);
+  const pos = ((k % (PARAM.subdiv*PARAM.mesure)) + PARAM.subdiv*PARAM.mesure) % (PARAM.subdiv*PARAM.mesure);
+  const db = 20 * Math.log10(Math.max(d.crete, 1e-6));
+  E.onsets.push({t:d.t, k:k, dev:dev, pos:pos, db:db, force:d.force});
+  if(E.onsets.length > 600) E.onsets.shift();
+}
+
+function recalculer(){
+  const pas = pasGrille();
+  const parMes = PARAM.subdiv*PARAM.mesure;
+  for(const o of E.onsets){
+    const t = o.t + PARAM.offset/1000;
+    const k = Math.round((t - E.ancre) / pas);
+    o.k = k;
+    o.dev = t - (E.ancre + k*pas);
+    o.pos = ((k % parMes) + parMes) % parMes;
+  }
+}
+
+// ---------------------------------------------------------------- métronome
+function basculerMetro(){
+  if(E.metro){
+    E.metro = false;
+    clearInterval(E.timer); E.timer = null;
+    $('btnMetro').classList.remove('actif');
+    $('btnMetro').textContent = 'Métronome';
+    return;
+  }
+  E.metro = true;
+  E.ancre = E.ctx.currentTime + 0.25;
+  E.k = 0;
+  E.prochain = E.ancre;
+  recalculer();
+  $('btnMetro').classList.add('actif');
+  $('btnMetro').textContent = 'Arrêter le métronome';
+  E.timer = setInterval(ordonnancer, 25);
+}
+
+function ordonnancer(){
+  if(!E.ctx) return;
+  const pas = pasGrille();
+  const parMes = PARAM.subdiv*PARAM.mesure;
+  while(E.prochain < E.ctx.currentTime + 0.12){
+    const pos = E.k % parMes;
+    const surTemps = (pos % PARAM.subdiv) === 0;
+    const jouer = PARAM.clic === 2 || (PARAM.clic === 1 && surTemps);
+    if(jouer) clic(E.prochain, pos === 0, surTemps);
+    E.k++;
+    E.prochain += pas;
+  }
+}
+
+function clic(quand, fort, surTemps){
+  const o = E.ctx.createOscillator();
+  const g = E.ctx.createGain();
+  o.type = 'square';
+  o.frequency.value = fort ? 1600 : (surTemps ? 1100 : 820);
+  const a = fort ? 0.22 : (surTemps ? 0.13 : 0.07);
+  g.gain.setValueAtTime(0.0001, quand);
+  g.gain.exponentialRampToValueAtTime(a, quand + 0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001, quand + 0.035);
+  o.connect(g); g.connect(E.ctx.destination);
+  o.start(quand); o.stop(quand + 0.05);
+}
+
+// ---------------------------------------------------------------- rendu
+function dessinerCible(){
+  const cv = $('cvCible'); const {c,L,H} = prepare(cv);
+  const pas = pasGrille();
+  const etendue = Math.min(0.12, pas/2);        // ± en secondes affichés
+  const marge = 34;
+  const y0 = 22, y1 = H - 26;
+  const xc = (dev) => marge + (L-2*marge) * (0.5 + dev/(2*etendue));
+
+  c.fillStyle = COUL.fond; c.fillRect(0,0,L,H);
+
+  // bande cible
+  c.fillStyle = 'rgba(107,143,90,.10)';
+  c.fillRect(xc(-FEN), y0, xc(FEN)-xc(-FEN), y1-y0);
+
+  // graduations
+  c.strokeStyle = COUL.trait; c.lineWidth = 1;
+  c.fillStyle = COUL.encre2; c.font = '10px "Work Sans",sans-serif'; c.textAlign = 'center';
+  const pasGrad = etendue > 0.09 ? 0.05 : (etendue > 0.045 ? 0.025 : 0.01);
+  for(let d = -Math.floor(etendue/pasGrad)*pasGrad; d <= etendue+1e-9; d += pasGrad){
+    const x = xc(d);
+    c.beginPath(); c.moveTo(x, y0); c.lineTo(x, y1); c.stroke();
+    c.fillText((d>0?'+':'') + Math.round(d*1000), x, y1+13);
+  }
+  // axe central
+  c.strokeStyle = COUL.sepia; c.lineWidth = 1.6;
+  c.beginPath(); c.moveTo(xc(0), y0-6); c.lineTo(xc(0), y1+4); c.stroke();
+
+  c.fillStyle = COUL.encre2; c.font = '10px "Work Sans",sans-serif';
+  c.textAlign = 'left';  c.fillText('en avance', marge, 14);
+  c.textAlign = 'right'; c.fillText('en retard', L-marge, 14);
+  c.textAlign = 'center';c.fillText('ms', xc(0), 14);
+
+  // points : les 48 dernières attaques, les plus récentes en bas
+  const vus = E.onsets.slice(-48);
+  if(vus.length === 0){
+    c.fillStyle = COUL.encre2; c.font = '12px "Work Sans",sans-serif';
+    c.fillText('Joue quelques notes pour voir apparaître le placement.', L/2, (y0+y1)/2);
+    return;
+  }
+  const dbMax = Math.max.apply(null, vus.map(o=>o.db));
+  const dbMin = Math.min.apply(null, vus.map(o=>o.db));
+  for(let i=0;i<vus.length;i++){
+    const o = vus[i];
+    const y = y1 - (y1-y0) * (i/Math.max(1,vus.length-1)) - 4;
+    const rel = dbMax > dbMin ? (o.db-dbMin)/(dbMax-dbMin) : .5;
+    const r = 2.6 + 4.6*rel;
+    const frais = 0.35 + 0.65*(i/Math.max(1,vus.length-1));
+    const x = Math.max(marge-6, Math.min(L-marge+6, xc(o.dev)));
+    c.globalAlpha = frais;
+    c.fillStyle = couleurEcart(o.dev);
+    c.beginPath(); c.arc(x, y, r, 0, 6.2832); c.fill();
+    if(o.pos === 0){                       // premier temps de la mesure : cerclé
+      c.globalAlpha = frais*0.8;
+      c.strokeStyle = COUL.encre; c.lineWidth = 1;
+      c.beginPath(); c.arc(x, y, r+2.4, 0, 6.2832); c.stroke();
+    }
+    c.globalAlpha = 1;
+  }
+  // médiane des 16 dernières
+  const rec = vus.slice(-16).map(o=>o.dev).sort((a,b)=>a-b);
+  if(rec.length >= 4){
+    const med = rec[Math.floor(rec.length/2)];
+    const x = Math.max(marge, Math.min(L-marge, xc(med)));
+    c.strokeStyle = COUL.or; c.lineWidth = 1.4; c.setLineDash([4,3]);
+    c.beginPath(); c.moveTo(x, y0); c.lineTo(x, y1); c.stroke(); c.setLineDash([]);
+  }
+}
+
+function dessinerFlux(){
+  const cv = $('cvFlux'); const {c,L,H} = prepare(cv);
+  c.fillStyle = COUL.fond; c.fillRect(0,0,L,H);
+  const n = E.odf.length;
+  if(n < 2){
+    c.fillStyle = COUL.encre2; c.font='12px "Work Sans",sans-serif'; c.textAlign='center';
+    c.fillText('En attente de signal.', L/2, H/2);
+    return;
+  }
+  const ech = Math.max(E.odfMax, 0.01);
+  const y = v => H - 6 - (H-16) * Math.min(1, v/ech);
+  // la trame la plus récente occupe le bord droit : même axe temporel que les attaques
+  const x = i => L * (i + ODF_MAX - n) / (ODF_MAX-1);
+
+  c.beginPath(); c.moveTo(x(0), H-6);
+  for(let i=0;i<n;i++) c.lineTo(x(i), y(E.odf[i]));
+  c.lineTo(x(n-1), H-6); c.closePath();
+  c.fillStyle = 'rgba(139,111,78,.22)'; c.fill();
+  c.beginPath();
+  for(let i=0;i<n;i++){ const px=x(i), py=y(E.odf[i]); i?c.lineTo(px,py):c.moveTo(px,py); }
+  c.strokeStyle = COUL.sepia; c.lineWidth = 1; c.stroke();
+
+  c.beginPath();
+  for(let i=0;i<n;i++){ const px=x(i), py=y(E.seuil[i]); i?c.lineTo(px,py):c.moveTo(px,py); }
+  c.strokeStyle = 'rgba(184,134,11,.75)'; c.lineWidth = 1; c.setLineDash([3,3]); c.stroke(); c.setLineDash([]);
+
+  // attaques sur la même échelle de temps
+  if(E.ctx){
+    const dt = 256 / E.ctx.sampleRate;
+    const tFin = E.ctx.currentTime;
+    const tDeb = tFin - ODF_MAX*dt;
+    for(const o of E.onsets){
+      if(o.t < tDeb) continue;
+      const px = L * (o.t - tDeb) / (ODF_MAX*dt);
+      c.strokeStyle = couleurEcart(o.dev); c.lineWidth = 1.4;
+      c.beginPath(); c.moveTo(px, 4); c.lineTo(px, H-6); c.stroke();
+    }
+  }
+  E.odfMax *= 0.9995;   // décroissance lente de l'échelle
+}
+
+function dessinerDyn(){
+  const cv = $('cvDyn'); const {c,L,H} = prepare(cv);
+  c.fillStyle = COUL.fond; c.fillRect(0,0,L,H);
+  const vus = E.onsets.slice(-64);
+  if(vus.length === 0){
+    c.fillStyle = COUL.encre2; c.font='12px "Work Sans",sans-serif'; c.textAlign='center';
+    c.fillText('En attente de mesures.', L/2, H/2); return;
+  }
+  const bas = H-18, haut = 10;
+  const dbMax = Math.max(-6, Math.max.apply(null, vus.map(o=>o.db)));
+  const dbMin = dbMax - 36;
+  const l = Math.max(2, Math.min(14, (L-8)/vus.length - 2));
+  c.strokeStyle = COUL.trait; c.lineWidth = 1;
+  for(let d=0; d>=-36; d-=12){
+    const yy = bas - (bas-haut)*((d + 36)/36);
+    c.beginPath(); c.moveTo(0, yy); c.lineTo(L, yy); c.stroke();
+  }
+  vus.forEach((o,i) => {
+    const rel = Math.max(0, Math.min(1, (o.db - dbMin)/(dbMax - dbMin)));
+    const h = (bas-haut)*rel;
+    const x = 4 + i*((L-8)/vus.length);
+    const surTemps = (o.pos % PARAM.subdiv) === 0;
+    c.fillStyle = o.pos === 0 ? COUL.or : (surTemps ? COUL.sepia : 'rgba(139,111,78,.45)');
+    c.fillRect(x, bas-h, l, h);
+  });
+  c.fillStyle = COUL.encre2; c.font='10px "Work Sans",sans-serif'; c.textAlign='left';
+  c.fillText(Math.round(dbMax)+' dB', 3, haut-1);
+  c.fillText(Math.round(dbMin)+' dB', 3, bas+12);
+}
+
+function dessinerProfil(){
+  const cv = $('cvProfil'); const {c,L,H} = prepare(cv);
+  c.fillStyle = COUL.fond; c.fillRect(0,0,L,H);
+  const n = PARAM.subdiv*PARAM.mesure;
+  const somme = new Array(n).fill(0), cpt = new Array(n).fill(0);
+  const devS = new Array(n).fill(0);
+  for(const o of E.onsets){ somme[o.pos] += o.db; devS[o.pos] += o.dev; cpt[o.pos]++; }
+  const bas = H-30, haut = 14;
+  const dispo = cpt.some(v=>v>0);
+  if(!dispo){
+    c.fillStyle = COUL.encre2; c.font='12px "Work Sans",sans-serif'; c.textAlign='center';
+    c.fillText('En attente de mesures.', L/2, H/2);
+    $('etatProfil').textContent = 'En attente de mesures.';
+    return;
+  }
+  const moys = somme.map((s,i) => cpt[i] ? s/cpt[i] : null);
+  const vals = moys.filter(v=>v!==null);
+  const mx = Math.max.apply(null, vals), mn = Math.min.apply(null, vals) - 3;
+  const lg = (L-16)/n;
+  for(let i=0;i<n;i++){
+    const x = 8 + i*lg;
+    const surTemps = (i % PARAM.subdiv) === 0;
+    if(moys[i] !== null){
+      const rel = (moys[i]-mn)/Math.max(1e-6, mx-mn);
+      const h = (bas-haut)*rel;
+      c.fillStyle = i === 0 ? COUL.or : (surTemps ? COUL.sepia : 'rgba(139,111,78,.42)');
+      c.fillRect(x+2, bas-h, lg-4, h);
+      c.fillStyle = COUL.encre; c.font='10px "Work Sans",sans-serif'; c.textAlign='center';
+      c.fillText((moys[i]-mx).toFixed(1).replace('.',','), x+lg/2, bas-h-4);
+    }else{
+      c.strokeStyle = COUL.trait; c.setLineDash([2,2]);
+      c.strokeRect(x+2, bas-6, lg-4, 6); c.setLineDash([]);
+    }
+    c.fillStyle = surTemps ? COUL.encre : COUL.encre2;
+    c.font = (surTemps?'600 ':'') + '10px "Work Sans",sans-serif'; c.textAlign='center';
+    const etiq = surTemps ? String(1 + i/PARAM.subdiv) : '·';
+    c.fillText(etiq, x+lg/2, bas+13);
+  }
+  c.strokeStyle = COUL.trait; c.beginPath(); c.moveTo(0,bas); c.lineTo(L,bas); c.stroke();
+  c.fillStyle = COUL.encre2; c.font='10px "Work Sans",sans-serif'; c.textAlign='left';
+  c.fillText('dB relatifs au maximum', 8, haut-3);
+
+  // lecture textuelle
+  let iMax = 0; for(let i=1;i<n;i++) if(moys[i]!==null && (moys[iMax]===null || moys[i]>moys[iMax])) iMax=i;
+  const ecart = mx - Math.min.apply(null, vals);
+  const nomme = (i) => (i % PARAM.subdiv === 0)
+      ? 'le temps ' + (1 + i/PARAM.subdiv)
+      : 'la subdivision ' + (i % PARAM.subdiv + 1) + ' du temps ' + (1 + Math.floor(i/PARAM.subdiv));
+  $('etatProfil').textContent = 'Position la plus appuyée : ' + nomme(iMax)
+      + ' — amplitude d\u2019accentuation ' + ecart.toFixed(1).replace('.',',') + ' dB sur '
+      + E.onsets.length + ' attaques.';
+}
+
+function bilan(){
+  const n = E.onsets.length;
+  $('nAtt').textContent = n;
+  if(n < 2){
+    ['biais','jitter','pctCible','dyn'].forEach(i => $(i).textContent = '—');
+    return;
+  }
+  const devs = E.onsets.map(o=>o.dev*1000);
+  const moy = devs.reduce((a,b)=>a+b,0)/n;
+  const va = devs.reduce((a,b)=>a+(b-moy)*(b-moy),0)/n;
+  const dansCible = devs.filter(d=>Math.abs(d) <= FEN*1000).length;
+  const dbs = E.onsets.map(o=>o.db);
+  $('biais').textContent = (moy>0?'+':'') + moy.toFixed(1).replace('.',',');
+  $('jitter').textContent = Math.sqrt(va).toFixed(1).replace('.',',');
+  $('pctCible').textContent = Math.round(100*dansCible/n);
+  $('dyn').textContent = (Math.max.apply(null,dbs) - Math.min.apply(null,dbs)).toFixed(1).replace('.',',');
+}
+
+function boucle(){
+  dessinerCible(); dessinerFlux(); dessinerDyn(); dessinerProfil(); bilan();
+  if(E.actif){
+    const pc = Math.min(100, E.crete*100);
+    $('vuNiveau').style.width = pc.toFixed(0) + '%';
+    $('alerteSat').hidden = E.crete < 0.97;
+  }
+  requestAnimationFrame(boucle);
+}
+
+// ---------------------------------------------------------------- divers
+function etat(txt, err){
+  const el = $('etat');
+  el.textContent = txt;
+  el.style.color = err ? '#8b3a20' : '';
+}
+
+function caler(){
+  const rec = E.onsets.slice(-24);
+  if(rec.length < 4){ etat('Il faut au moins quatre attaques récentes pour caler.', true); return; }
+  const devs = rec.map(o=>o.dev).sort((a,b)=>a-b);
+  const med = devs[Math.floor(devs.length/2)];
+  const nv = Math.max(-150, Math.min(150, Math.round(PARAM.offset - med*1000)));
+  PARAM.offset = nv;
+  $('offset').value = nv;
+  $('offsetVal').textContent = nv + ' ms';
+  recalculer();
+  etat('Décalage calé à ' + nv + ' ms sur les ' + rec.length + ' dernières attaques.');
+}
+
+function exporter(){
+  const donnees = {
+    outil:'analyse-attaque', version:1,
+    date:new Date().toISOString(),
+    reglages:{tempo:PARAM.tempo, subdivision:PARAM.subdiv, temps_par_mesure:PARAM.mesure,
+              decalage_ms:PARAM.offset, sensibilite:PARAM.sens, ecart_min_ms:Math.round(PARAM.ioi*1000),
+              echantillonnage_hz:E.ctx ? E.ctx.sampleRate : null},
+    attaques:E.onsets.map(o=>({
+      temps_s:+o.t.toFixed(4), case_grille:o.k, position_mesure:o.pos,
+      ecart_ms:+(o.dev*1000).toFixed(1), intensite_db:+o.db.toFixed(1)
+    }))
+  };
+  const b = new Blob([JSON.stringify(donnees, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b);
+  a.download = 'attaques-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.json';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------------------------------------------------------------- liaisons
+$('btnMicro').addEventListener('click', () => E.actif ? arreter() : demarrer());
+$('btnMetro').addEventListener('click', basculerMetro);
+$('btnRaz').addEventListener('click', () => {
+  E.onsets = [];
+  if(E.ctx) E.ancre = E.ctx.currentTime + 0.05;
+  if(E.metro){ E.k = 0; E.prochain = E.ancre; }
+  etat('Mesures effacées. La grille repart de maintenant.');
+});
+$('btnCaler').addEventListener('click', caler);
+$('btnExport').addEventListener('click', exporter);
+
+$('tempo').addEventListener('change', e => {
+  PARAM.tempo = Math.max(30, Math.min(240, parseInt(e.target.value,10) || 80));
+  e.target.value = PARAM.tempo;
+  if(E.metro){ E.ancre = E.ctx.currentTime + 0.1; E.k = 0; E.prochain = E.ancre; }
+  recalculer();
+});
+$('subdiv').addEventListener('change', e => { PARAM.subdiv = +e.target.value; recalculer(); });
+$('mesure').addEventListener('change', e => { PARAM.mesure = +e.target.value; recalculer(); });
+$('clic').addEventListener('change', e => { PARAM.clic = +e.target.value; });
+
+$('offset').addEventListener('input', e => {
+  PARAM.offset = +e.target.value;
+  $('offsetVal').textContent = PARAM.offset + ' ms';
+  recalculer();
+});
+$('sens').addEventListener('input', e => {
+  PARAM.sens = +e.target.value;
+  $('sensVal').textContent = PARAM.sens.toFixed(2).replace('.',',');
+  if(E.worklet) E.worklet.port.postMessage({sens:PARAM.sens});
+});
+$('ioi').addEventListener('input', e => {
+  PARAM.ioi = (+e.target.value)/1000;
+  $('ioiVal').textContent = e.target.value + ' ms';
+  if(E.worklet) E.worklet.port.postMessage({minIOI:PARAM.ioi});
+});
+
+requestAnimationFrame(boucle);
+</script>
+</body>
+</html>
