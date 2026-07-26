@@ -5,7 +5,7 @@ micro du navigateur. Destiné à l'usage pédagogique : montrer à l'élève où
 réellement ses attaques par rapport à la grille, et comment il répartit ses accents.
 
 **En ligne** : https://nmulongo-sys.github.io/analyse-attaque/
-**Statut** : v1 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
+**Statut** : v1.1 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
 
 ## Utilisation
 
@@ -78,6 +78,28 @@ Garde-fous : porte de niveau à **−58 dBFS** (rien n'est détecté sous ce seu
 **échauffement de 0,45 s** au démarrage, le temps que les crêtes par bande convergent.
 
 Sensibilité et écart minimum sont modifiables à chaud via `port.postMessage`.
+
+### Dimensionnement des canevas — piège à connaître
+
+`prepare(cv)` sépare deux tailles qu'il ne faut jamais confondre :
+
+- la **hauteur CSS voulue**, figée une fois pour toutes dans `cv.dataset.h` (dupliquée dans
+  l'attribut `data-h` du balisage) ;
+- la **taille du tampon de rendu**, `cv.width` / `cv.height`, égale à la taille CSS
+  multipliée par le rapport de pixels, plafonné à 2.
+
+Écrire `cv.height` **se reflète dans l'attribut `height`**. Relire la hauteur voulue dans
+cet attribut à l'image suivante la remultiplierait donc par le rapport de pixels, à chaque
+image, indéfiniment. C'est le défaut corrigé en v1.1 ; le test `vregress` couvre ce cas.
+`cv.style.height` est fixé explicitement, sans quoi l'élément prend pour hauteur de mise
+en page la taille de son tampon.
+
+### Ordonnancement du rendu
+
+Seul le bandeau de flux est réellement animé, plafonné à ~30 images/s. Les trois autres
+graphiques et le bilan ne sont redessinés que lorsque `E.maj` est vrai — positionné à
+l'arrivée d'une attaque, après `recalculer()`, à l'effacement des mesures et au
+redimensionnement. Redessiner l'ensemble à 60 Hz ne servait qu'à chauffer le téléphone.
 
 ### Prise de son
 
@@ -166,6 +188,27 @@ instrumenté sous Node :
 À confirmer sur guitare et micro réels : le banc est synthétique.
 
 ## Journal de développement
+
+### 2026-07-27 — v1.1, correctif d'affichage
+- **Défaut bloquant corrigé : emballement du dimensionnement des canevas.** `prepare()`
+  lisait la hauteur voulue dans l'attribut `height` du canevas, puis y écrivait la taille
+  du tampon de rendu (`cv.height = h × devicePixelRatio`), qui se reflète dans ce même
+  attribut. À l'image suivante la valeur écrite était relue et remultipliée : sur un écran
+  à 2,75×, 260 → 715 → 1966 → 5406 px, à 60 images par seconde. La page enflait sans
+  limite et l'affichage tremblait en continu. La hauteur voulue est désormais figée au
+  premier appel dans `cv.dataset.h`, hors de portée de l'écriture du tampon.
+- `cv.style.height` fixé explicitement : sans lui, l'élément prenait pour hauteur de mise
+  en page la taille de son tampon, et le tracé n'occupait que le haut du cadre.
+- Rapport de pixels plafonné à 2 — au-delà, le coût de tracé sur mobile n'achète plus rien
+  de visible.
+- Rendu conditionnel : le bandeau de flux est plafonné à ~30 images/s, les autres
+  graphiques ne sont redessinés que sur changement effectif (`E.maj`).
+- Redessin forcé sur `resize` et `orientationchange`, le canevas étant effacé par sa
+  réallocation.
+- Test de non-régression ajouté : 300 passes de rendu à DPR 2,75, vérification que le
+  tampon reste stable, puis rotation à 780 px / DPR 3. Les validations précédentes
+  n'appelaient les fonctions de dessin qu'une ou deux fois — soit exactement le nombre
+  d'appels qui ne révèle pas ce défaut.
 
 ### 2026-07-27 — révision initiale (v1)
 - Première version : détection d'attaques et mesure de placement/dynamique, en fichier
