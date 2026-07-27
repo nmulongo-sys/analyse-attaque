@@ -73,6 +73,9 @@ Analyse par trames : `N = 1024` échantillons, saut `HOP = 256`, soit une trame 
    glissante : `pic[k] = max(mg, pic[k]·r, 2e-4)` avec `r = exp(-hop/0,6 s)`.
    Sans cette étape, les partiels graves qui battent entre eux pendant la résonance
    produisent des montées d'énergie indiscernables d'une vraie attaque.
+   Cette normalisation par crête glissante par bande, sans entraînement et en temps réel,
+   est la méthode publiée par Stowell & Plumbley (2007) ; elle a été retrouvée ici
+   empiriquement. Voir *Références*.
 3. **Flux spectral** — somme des différences positives du spectre blanchi entre deux
    trames, moyennée sur les bandes utiles (jusqu'à 6 kHz).
 4. **Seuil adaptatif** — médiane du flux sur les 45 dernières trames (≈ 240 ms), multipliée
@@ -291,6 +294,95 @@ instrumenté sous Node :
 
 ## Journal de développement
 
+### 2026-07-27 — analyse du premier protocole complet (13 prises)
+Dépouillement de l'export `protocole-2026-07-27-03-17-23.json` : Android Chrome, casque
+confirmé, chaîne figée, `ecart_min_ms = 30`, 14 prises dont un rejet motivé. Aucune
+modification de code — cette entrée consigne des résultats de mesure.
+
+**Série A — le détecteur ne manque rien à 1000 ms.** Vérité terrain de 48 attaques et
+48 cases de grille par prise.
+
+| Prise | Détections brutes | Cases occupées | Lecture |
+|---|---|---|---|
+| A1 acier / médiator / mi grave | 96 | 48/48 | complet, ×2,0 redéclenchements |
+| A2 acier / médiator / mi aigu | 107 | 48/48 | complet, ×2,2 |
+| A3 nylon / doigt | 173 | 48/48 | complet, ×3,6 |
+| A4 accord plaqué 6 cordes | 52 | 29/48 | ×1,1 |
+| A5 palm mute faible | 281 | 48/48 | accroche ≤ 0,31 — inexploitable |
+| A6 hammer-on / pull-off | 151 | 46/48 | accroche 0,05–0,09 — inexploitable |
+
+Aucune attaque manquée, ni sur acier ni sur nylon, ni au médiator ni au doigt. La porte à
+−58 dBFS ne coupe rien, même en palm mute délibérément faible. Le problème n'est jamais la
+détection : c'est le redéclenchement, ×2 à ×3,6 selon le timbre, le nylon au doigt étant
+le pire cas.
+
+- **A6 tranché : non.** Les hammer-on et pull-off produisent 151 détections sans aucune
+  structure temporelle exploitable. À écarter de tout parcours de mesure.
+- **A5 tranché : non.** Le palm mute faible sature le détecteur sans jamais s'accrocher.
+  Un travail sur les étouffées ne sera pas mesurable par cette chaîne.
+- **A4 contredit l'hypothèse du balayage.** L'accord plaqué ne donne que 1,1 détection par
+  geste. Les doublons à 59–75 ms relevés en v1.3 et v1.5 ne venaient donc pas des cordes
+  balayées ; l'attribution au seul redéclenchement sur résonance est confirmée.
+
+**`ecart_min_ms` ne pilote pas la qualité de la mesure.** Balayage d'un réfractaire greedy
+de 30 à 600 ms sur les treize prises : l'accroche ne bouge pas (A1 reste à 0,72–0,79, B3 à
+0,79–0,82, C2 à 0,71–0,82) alors que le nombre de gestes retenus change du simple au
+double. C'est un paramètre d'affichage et de comptage, pas de précision : à figer une fois
+(120 ms) et à ne plus exposer.
+
+**Série B — compromise par un décrochage de tempo, pas par l'outil.**
+
+| Prise | Pas | Tempo joué | Écart | Dérive sur la prise | R |
+|---|---|---|---|---|---|
+| B1 | 1000 ms | 60,2 | −0,3 % | +129 ms | 0,70 |
+| B2 | 667 ms | 91,5 | −1,6 % | +520 ms | 0,83 |
+| B3 | 500 ms | 119,7 | +0,3 % | −80 ms | 0,82 |
+| B4 | 333 ms | 85,2 | +5,6 % | −1591 ms | 0,40 |
+| B5 | 250 ms | 112,5 | +6,7 % | −1875 ms | 0,18 |
+
+En B4 et B5 le jeu n'est pas synchronisé au clic : cinq à sept tours de phase complets sur
+30 s, l'accroche s'effondre mécaniquement. B5 ajoute une perte de détection réelle
+(74 détections brutes pour ≈ 112 attaques effectivement jouées). Ces deux prises sont à
+refaire, et `protocole.html` doit refuser une prise dont le tempo joué s'écarte de plus de
+3 % du tempo réglé — sinon la page produit des JSON qui coûtent une analyse pour rien.
+
+**Coefficient de la fenêtre de tolérance.** Dispersion mesurée par les intervalles entre
+attaques successives, immune à la dérive :
+
+| Intervalle | σ locale | σ / intervalle |
+|---|---|---|
+| 333 ms (B4) | 20,0 ms | 6,0 % |
+| 375 ms (C1) | 20,5 ms | 5,5 % |
+| 375 ms (C2) | 24,8 ms | 6,6 % |
+| 667 ms (B2) | 47,2 ms | 7,1 % |
+| 1000 ms (B1) | 57,6 ms | 5,8 % |
+| 1000 ms (A1) | 70,3 ms | 7,0 % |
+
+σ ≈ **6 % de l'intervalle**, stable de 333 à 1000 ms sur sept mesures indépendantes. B3
+(11,1 %) et B5 (12,2 %) s'en écartent mais ne reposent que sur 17 et 18 intervalles, et ne
+sont pas comptés. Conséquence pour `FEN`, aujourd'hui constante à ±25 ms : la valeur est
+juste par accident autour de 375–400 ms, absurdement sévère à 1000 ms et laxiste à 250 ms.
+Une fenêtre relative à 6 % de l'intervalle est proposée. **Non implémentée** : la loi
+demande confirmation sur une seconde série. Rapportée au seuil perceptif de Friberg &
+Sundberg (2,5 %), la production se situe à 2,4× la finesse de la perception — sens attendu.
+
+**Série C — bénéfice de subdivision : lecture partagée.** Même geste, croches à 80 bpm,
+seul le clic change. C1 (clic sur les temps) : R = 0,66, σ locale 20,5 ms. C2 (clic sur les
+croches) : R = 0,77, σ locale 24,8 ms. Le clic subdivisé améliore nettement l'ancrage de
+phase et n'améliore pas la régularité locale ; la chute de dispersion attendue d'après
+Repp (2003) n'apparaît pas. Une prise par condition, ≈ 54 gestes : indicatif, non
+concluant. À rejouer en trois répétitions alternées avant d'en tirer une règle.
+
+**Le biais reste inexploitable.** De +130 à +440 ms selon les prises. `outputLatency`
+déclaré à 4 ms par Chrome Android, invraisemblable au casque. Aucune calibration par boucle
+acoustique n'est prévue dans le protocole : à ajouter en tête de séance.
+
+*Note de méthode.* La couverture de grille brute sous-estime le jeu réel dès que la latence
+non calibrée dépasse `pas/2` — en B4, 215 ms contre 166 ms : les attaques basculent dans la
+case suivante et sont comptées comme des trous. Aux pas courts, tout comptage de couverture
+doit être recentré sur le biais circulaire avant d'être lu. L'accroche R, elle, est
+invariante par translation de phase et n'est pas concernée.
+
 ### 2026-07-27 — v1.6, page de protocole de capture
 Ajout de `protocole.html` et `PROTOCOLE.md`. Séparation nette des deux usages : `index.html`
 est l'outil d'entraînement, qui interprète en temps réel ; `protocole.html` est
@@ -479,6 +571,31 @@ détectée à l'étape 1. Dans un contexte pédagogique l'accord attendu est con
 problème n'est pas la *détection* en classe ouverte mais la *vérification* contre un
 gabarit, plus fiable, et capable d'indiquer quelle corde manque. Verdict ternaire :
 conforme / confusion identifiée / indéterminé — jamais de verdict autoritaire faux.
+
+## Références
+
+- Stowell, D., & Plumbley, M. D. (2007). *Adaptive whitening for improved real-time audio
+  onset detection.* Proc. International Computer Music Conference (ICMC).
+  http://epubs.surrey.ac.uk/811731/ — normalisation de chaque bande par un maximum récent,
+  sans entraînement, en temps réel : la méthode employée à l'étape 2 de la chaîne de
+  détection.
+- Dixon, S. (2006). *Onset detection revisited.* Proc. 9th International Conference on
+  Digital Audio Effects (DAFx-06), Montréal, 133–137.
+  https://www.dafx.de/paper-archive/2006/papers/p_133.pdf — comparaison des fonctions de
+  détection d'attaque et du seuillage adaptatif par médiane glissante.
+- Friberg, A., & Sundberg, J. (1995). *Time discrimination in a monotonic, isochronous
+  sequence.* Journal of the Acoustical Society of America, 98(5), 2524–2531.
+  https://doi.org/10.1121/1.413218 — seuil différentiel d'environ 6 ms pour des intervalles
+  de 100 à 240 ms, et 2,5 % au-delà. Référence perceptive à laquelle est rapportée la
+  dispersion mesurée.
+- Repp, B. H. (2003). *Rate limits in sensorimotor synchronization with auditory sequences.*
+  https://pubmed.ncbi.nlm.nih.gov/14607773/ — bénéfice de subdivision, condition testée par
+  la série C du protocole.
+- Repp, B. H. (2005). *Sensorimotor synchronization: a review of the tapping literature.*
+  https://link.springer.com/article/10.3758/BF03206433 — asynchronie moyenne et SDasy, les
+  deux grandeurs que l'outil nomme biais et régularité.
+- Repp, B. H., & Su, Y.-H. (2013). *Sensorimotor synchronization: a review of recent
+  research (2006–2012).* https://pubmed.ncbi.nlm.nih.gov/23397235/
 
 ## Licence
 
