@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Protocole de capture — analyse d'attaque</title>
+<style>
+:root{
+  --creme:#f4ece0; --creme2:#eadfcd; --papier:#fbf6ee; --encre:#382d24; --encre2:#6e5c4b;
+  --trait:#d9c9b1; --or:#b8860b; --sepia:#8b6f4e; --vert:#6b8f5a; --rouge:#a8543a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--creme);color:var(--encre);
+  font-family:'Work Sans','Segoe UI',system-ui,sans-serif;font-size:15px;line-height:1.5;
+  -webkit-text-size-adjust:100%;padding:0 0 3rem}
+header{padding:1.4rem 1rem .9rem;border-bottom:1px solid var(--trait);background:var(--papier)}
+h1{font-family:'Cormorant Garamond',Georgia,serif;font-weight:600;font-size:1.8rem;margin:0 0 .15rem}
+.sous{font-size:.82rem;color:var(--encre2);margin:0}
+main{max-width:900px;margin:0 auto;padding:0 .8rem}
+section{background:var(--papier);border:1px solid var(--trait);border-radius:3px;
+  margin:.9rem 0;padding:.85rem .9rem 1rem}
+section[hidden]{display:none}
+h2{font-family:'Cormorant Garamond',Georgia,serif;font-size:1.15rem;font-weight:600;margin:0 0 .6rem;
+  padding-bottom:.35rem;border-bottom:1px solid var(--trait);
+  display:flex;justify-content:space-between;align-items:baseline;gap:.5rem}
+h2 .note{font-family:'Work Sans',sans-serif;font-size:.7rem;color:var(--encre2);
+  font-weight:400;text-transform:uppercase;letter-spacing:.08em}
+button{font-family:inherit;font-size:.9rem;background:var(--creme2);color:var(--encre);
+  border:1px solid var(--sepia);border-radius:3px;padding:.6rem 1rem;cursor:pointer;min-height:46px}
+button:hover{background:#e0d2bc}
+button:active{transform:translateY(1px)}
+button:focus-visible{outline:2px solid var(--or);outline-offset:2px}
+button[disabled]{opacity:.4;cursor:not-allowed}
+button.primaire{background:var(--or);border-color:#8a6608;color:#fff8e8;font-weight:500}
+button.primaire:hover{background:#a5780a}
+button.discret{background:transparent;border-color:var(--trait);color:var(--encre2);font-size:.82rem;min-height:40px}
+.rangee{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}
+label.coche{display:flex;gap:.6rem;align-items:flex-start;font-size:.9rem;cursor:pointer;
+  background:var(--creme);border:1px solid var(--trait);border-radius:3px;padding:.7rem .8rem}
+label.coche input{margin-top:.2rem;width:20px;height:20px;accent-color:var(--or);flex:none}
+.etat{font-size:.82rem;color:var(--encre2);margin:.5rem 0 0}
+.alerte{background:#f7e6dd;border:1px solid var(--rouge);color:#6d3221;padding:.55rem .7rem;
+  border-radius:3px;font-size:.84rem;margin:.5rem 0 0}
+.vu{height:10px;background:var(--creme2);border:1px solid var(--trait);border-radius:2px;
+  overflow:hidden;margin-top:.5rem}
+.vu i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--vert),var(--or) 70%,var(--rouge) 92%)}
+.carte{background:var(--creme);border:1px solid var(--sepia);border-radius:3px;padding:.9rem}
+.idprise{font-family:'Cormorant Garamond',Georgia,serif;font-size:2.6rem;line-height:1;color:var(--or)}
+.consigne{font-size:1.05rem;margin:.6rem 0 .8rem}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:.45rem;margin-top:.7rem}
+.meta div{background:var(--papier);border:1px solid var(--trait);border-radius:3px;padding:.4rem .5rem}
+.meta .k{display:block;font-size:.62rem;text-transform:uppercase;letter-spacing:.07em;color:var(--encre2)}
+.meta .v{font-variant-numeric:tabular-nums;font-size:.95rem}
+.gros{font-family:'Cormorant Garamond',Georgia,serif;font-size:3.6rem;line-height:1;text-align:center;
+  margin:.4rem 0;font-variant-numeric:tabular-nums}
+.barre{height:8px;background:var(--creme2);border:1px solid var(--trait);border-radius:2px;overflow:hidden}
+.barre i{display:block;height:100%;width:0;background:var(--or)}
+ol.avancement{list-style:none;margin:0;padding:0;font-size:.85rem}
+ol.avancement li{display:flex;gap:.55rem;align-items:center;padding:.35rem .2rem;
+  border-bottom:1px solid var(--trait)}
+ol.avancement li:last-child{border-bottom:0}
+ol.avancement .pastille{width:1.5rem;flex:none;text-align:center;font-weight:600;color:var(--encre2)}
+ol.avancement .lib{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ol.avancement .st{font-size:.72rem;color:var(--encre2);flex:none}
+li.faite .pastille{color:var(--vert)}
+li.courante{background:var(--creme2)}
+li.courante .pastille{color:var(--or)}
+li.rejetee .st{color:var(--rouge)}
+select,input[type=text]{font-family:inherit;font-size:.9rem;padding:.5rem;background:var(--creme);
+  border:1px solid var(--trait);border-radius:3px;color:var(--encre);min-height:42px;width:100%}
+.champ{display:flex;flex-direction:column;gap:.2rem;flex:1 1 180px}
+.champ label{font-size:.66rem;text-transform:uppercase;letter-spacing:.07em;color:var(--encre2)}
+dl.appareil{margin:0;font-size:.78rem;display:grid;grid-template-columns:auto 1fr;gap:.2rem .7rem}
+dl.appareil dt{color:var(--encre2)}
+dl.appareil dd{margin:0;font-variant-numeric:tabular-nums;word-break:break-all}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Protocole de capture</h1>
+  <p class="sous">13 prises enchaînées — un seul JSON, aucune analyse. L'interprétation se fait en aval.</p>
+</header>
+
+<main>
+
+<section id="secReprise" hidden>
+  <h2>Session interrompue</h2>
+  <p class="etat" id="repriseInfo"></p>
+  <div class="rangee">
+    <button id="btnReprendre" class="primaire">Reprendre où j'en étais</button>
+    <button id="btnJeter" class="discret">Repartir de zéro</button>
+  </div>
+</section>
+
+<section id="secPrep">
+  <h2>Préparation <span class="note">obligatoire</span></h2>
+  <label class="coche">
+    <input type="checkbox" id="casque">
+    <span><strong>Je joue au casque.</strong> Le clic capté par le micro serait détecté comme une attaque et fausserait tout le protocole. Aucune prise au haut-parleur.</span>
+  </label>
+  <div class="rangee" style="margin-top:.7rem">
+    <button id="btnMicro" class="primaire" disabled>Activer le micro et démarrer</button>
+  </div>
+  <div class="vu"><i id="vuNiveau"></i></div>
+  <p class="etat" id="etatPrep">Coche la confirmation pour activer le bouton.</p>
+  <div class="alerte" id="alerteSat" hidden>Signal saturé — éloigne la guitare du micro ou baisse le gain d'entrée.</div>
+  <details style="margin-top:.7rem">
+    <summary style="cursor:pointer;color:var(--sepia);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em">Chaîne de détection figée</summary>
+    <p class="etat">Sensibilité 2,50 · écart minimum 30 ms · porte −58 dBFS · échauffement 0,45 s · fenêtre 1024, saut 256 · décalage de latence 0. Aucun de ces réglages n'est modifiable, et aucun ne bouge entre les prises. Le regroupement des détections en gestes se fera en post-traitement, à plusieurs valeurs, sur le même flux.</p>
+  </details>
+</section>
+
+<section id="secAppareil" hidden>
+  <h2>Appareil <span class="note">journalisé dans l'export</span></h2>
+  <dl class="appareil" id="dlAppareil"></dl>
+</section>
+
+<section id="secPrise" hidden>
+  <h2>Prise en cours <span class="note" id="noteSerie"></span></h2>
+  <div class="carte">
+    <div class="idprise" id="priseId">A1</div>
+    <p class="consigne" id="priseConsigne"></p>
+    <div class="meta">
+      <div><span class="k">Tempo</span><span class="v" id="mTempo"></span></div>
+      <div><span class="k">Grille</span><span class="v" id="mGrille"></span></div>
+      <div><span class="k">Clic</span><span class="v" id="mClic"></span></div>
+      <div><span class="k">Durée utile</span><span class="v" id="mDuree"></span></div>
+      <div><span class="k">Attaques attendues</span><span class="v" id="mAttendues"></span></div>
+    </div>
+  </div>
+
+  <div id="blocAttente" style="margin-top:.8rem">
+    <div class="rangee">
+      <button id="btnDemarrer" class="primaire">Prêt — lancer la prise</button>
+    </div>
+    <p class="etat">Deux mesures de décompte seront jouées et ignorées. La prise s'arrête seule.</p>
+  </div>
+
+  <div id="blocDecompte" hidden style="margin-top:.8rem">
+    <div class="gros" id="decompte">—</div>
+    <p class="etat" style="text-align:center">Décompte — deux mesures ignorées. Cale-toi.</p>
+  </div>
+
+  <div id="blocEnreg" hidden style="margin-top:.8rem">
+    <div class="gros" id="restant">—</div>
+    <div class="barre"><i id="barreProgres"></i></div>
+    <p class="etat" style="text-align:center">Enregistrement · <span id="compteurDet">0</span> détections</p>
+  </div>
+
+  <div id="blocFin" hidden style="margin-top:.8rem">
+    <p class="etat"><strong id="resumePrise"></strong></p>
+    <div class="rangee">
+      <button id="btnSuivante" class="primaire">Prise suivante</button>
+      <button id="btnRefaire" class="discret">Refaire cette prise</button>
+    </div>
+  </div>
+
+  <div id="blocRejet" hidden style="margin-top:.8rem">
+    <div class="rangee">
+      <div class="champ">
+        <label for="motif">Motif du rejet</label>
+        <select id="motif">
+          <option value="erreur de jeu">Erreur de jeu</option>
+          <option value="interruption exterieure">Interruption extérieure</option>
+          <option value="consigne mal suivie">Consigne mal suivie</option>
+          <option value="probleme de son">Problème de son</option>
+          <option value="autre">Autre</option>
+        </select>
+      </div>
+      <div class="champ">
+        <label for="motifTexte">Précision (facultatif)</label>
+        <input type="text" id="motifTexte" maxlength="120" placeholder="…">
+      </div>
+    </div>
+    <div class="rangee" style="margin-top:.6rem">
+      <button id="btnConfirmerRejet">Confirmer le rejet et refaire</button>
+      <button id="btnAnnulerRejet" class="discret">Annuler</button>
+    </div>
+    <p class="etat">La prise rejetée est conservée dans le JSON avec son motif — elle n'est jamais supprimée.</p>
+  </div>
+</section>
+
+<section id="secAvancement" hidden>
+  <h2>Avancement <span class="note" id="noteAvancement"></span></h2>
+  <ol class="avancement" id="listeAvancement"></ol>
+</section>
+
+<section id="secExport" hidden>
+  <h2>Export</h2>
+  <p class="etat" id="etatExport"></p>
+  <div class="rangee" style="margin-top:.5rem">
+    <button id="btnExport" class="primaire">Exporter le protocole (JSON)</button>
+    <button id="btnRaz" class="discret">Effacer la session</button>
+  </div>
+</section>
+
+<section>
+  <h2>Ce que cette page ne fait pas</h2>
+  <p class="etat">Elle ne calcule aucune accroche, aucun biais, aucune dispersion, aucun pourcentage en cible, aucun diagnostic. Elle ne fusionne rien avant l'export : le JSON contient le flux brut intégral des détections, avec l'ancre et le pas de grille de chaque prise. Tout se recalcule en aval.</p>
+</section>
+
+</main>
+
+<script id="src-worklet" type="text/plain">
+class DetecteurAttaque extends AudioWorkletProcessor {
+  constructor(options){
+    super();
+    const o = options.processorOptions || {};
+    this.N = o.N || 1024;
+    this.HOP = o.HOP || 256;
+    this.sens = o.sens || 2.5;
+    this.minIOI = o.minIOI || 0.030;
+    this.porte = Math.pow(10, -58/20);
+
+    const N = this.N;
+    this.ring = new Float32Array(N);
+    this.w = 0; this.acc = 0;
+    this.re = new Float32Array(N);
+    this.im = new Float32Array(N);
+    this.pic = new Float32Array(N/2).fill(1e-4);
+    this.precB = new Float32Array(N/2);
+    this.decroit = Math.exp(-(this.HOP/sampleRate)/0.6);
+    this.win = new Float32Array(N);
+    for(let i=0;i<N;i++) this.win[i] = 0.5 - 0.5*Math.cos(2*Math.PI*i/N);
+    this.cosT = new Float32Array(N/2);
+    this.sinT = new Float32Array(N/2);
+    for(let i=0;i<N/2;i++){
+      this.cosT[i] = Math.cos(-2*Math.PI*i/N);
+      this.sinT[i] = Math.sin(-2*Math.PI*i/N);
+    }
+    this.binMax = Math.min(N/2, Math.max(8, Math.floor(6000 / (sampleRate/N))));
+    this.hist = new Float32Array(45);
+    this.hi = 0;
+    this.tri = new Float32Array(45);
+    this.f0 = 0; this.f1 = 0; this.f2 = 0;
+    this.thr1 = 0;
+    this.echauffement = Math.ceil(0.45 * sampleRate / this.HOP);
+    this.dernierOnset = -10;
+    this.attente = null;
+    this.lotN = 0;
+  }
+
+  fft(){
+    const N = this.N, re = this.re, im = this.im;
+    for(let i=1, j=0; i<N; i++){
+      let bit = N >> 1;
+      for(; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if(i < j){
+        let t = re[i]; re[i] = re[j]; re[j] = t;
+        t = im[i]; im[i] = im[j]; im[j] = t;
+      }
+    }
+    for(let len=2; len<=N; len<<=1){
+      const demi = len >> 1, pas = N / len;
+      for(let i=0; i<N; i+=len){
+        for(let j=0; j<demi; j++){
+          const k = j * pas;
+          const cr = this.cosT[k], ci = this.sinT[k];
+          const a = i + j, b = a + demi;
+          const vr = re[b]*cr - im[b]*ci;
+          const vi = re[b]*ci + im[b]*cr;
+          re[b] = re[a] - vr; im[b] = im[a] - vi;
+          re[a] += vr;        im[a] += vi;
+        }
+      }
+    }
+  }
+
+  mediane(){
+    this.tri.set(this.hist);
+    const a = this.tri;
+    for(let i=1;i<a.length;i++){
+      const v = a[i]; let j = i-1;
+      while(j>=0 && a[j]>v){ a[j+1]=a[j]; j--; }
+      a[j+1] = v;
+    }
+    return a[22];
+  }
+
+  livrer(){
+    const a = this.attente;
+    this.attente = null;
+    if(!a) return;
+    this.port.postMessage({type:'onset', t:a.t, force:a.force, rms:a.rms, crete:a.crete});
+  }
+
+  trame(finEch){
+    const N = this.N, w = this.w;
+    for(let i=0;i<N;i++){
+      this.re[i] = this.ring[(w+i) % N] * this.win[i];
+      this.im[i] = 0;
+    }
+    this.fft();
+
+    let flux = 0;
+    const ech = 4/N;
+    for(let k=1;k<this.binMax;k++){
+      const mg = Math.hypot(this.re[k], this.im[k]) * ech;
+      const p = Math.max(mg, this.pic[k]*this.decroit, 2e-4);
+      this.pic[k] = p;
+      const b = mg / p;
+      const d = b - this.precB[k];
+      if(d > 0) flux += d;
+      this.precB[k] = b;
+    }
+    flux /= (this.binMax - 1);
+
+    let s = 0, crete = 0;
+    for(let i=0;i<this.HOP;i++){
+      const v = this.ring[(w - this.HOP + i + N) % N];
+      s += v*v;
+      const av = Math.abs(v);
+      if(av > crete) crete = av;
+    }
+    const rms = Math.sqrt(s / this.HOP);
+    const tFin = finEch / sampleRate;
+
+    const med = this.mediane();
+    const seuil = med * this.sens + 0.0001;
+    this.hist[this.hi] = flux;
+    this.hi = (this.hi + 1) % this.hist.length;
+
+    this.f2 = this.f1; this.f1 = this.f0; this.f0 = flux;
+    const hop = this.HOP / sampleRate;
+    const t1 = tFin - hop;
+    const thr1 = this.thr1;
+    this.thr1 = seuil;
+
+    if(this.attente){
+      if(rms > this.attente.rms) this.attente.rms = rms;
+      if(crete > this.attente.crete) this.attente.crete = crete;
+      if(--this.attente.reste <= 0) this.livrer();
+    }
+
+    const tAtt = t1 - hop;
+    if(this.echauffement > 0){ this.echauffement--; }
+    else if(rms > this.porte
+       && this.f1 > thr1 && this.f1 > this.f2 && this.f1 >= this.f0
+       && (tAtt - this.dernierOnset) > this.minIOI){
+      if(this.attente) this.livrer();
+      this.dernierOnset = tAtt;
+      this.attente = {t:tAtt, force:this.f1, rms:rms, crete:crete, reste:6};
+    }
+
+    if(++this.lotN >= 12){
+      this.lotN = 0;
+      this.port.postMessage({type:'niveau', rms:rms, crete:crete});
+    }
+  }
+
+  process(entrees){
+    const ch = entrees[0] && entrees[0][0];
+    if(!ch) return true;
+    const N = this.N;
+    for(let i=0;i<ch.length;i++){
+      this.ring[this.w] = ch[i];
+      this.w = (this.w + 1) % N;
+      this.acc++;
+      if(this.acc >= this.HOP){
+        this.acc -= this.HOP;
+        this.trame(currentFrame + i + 1);
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('detecteur-attaque', DetecteurAttaque);
+</script>
+
+<script>
+'use strict';
+
+// ============================================================ chaîne figée
+const FIGE = Object.freeze({
+  N:1024, HOP:256, sensibilite:2.5, ecart_min_ms:30,
+  porte_dbfs:-58, echauffement_s:0.45, decalage_ms:0,
+  chef_fenetre_ms:120        // marquage informatif uniquement, aucune fusion destructive
+});
+const MESURE = 4;            // temps par mesure
+const DECOMPTE_MESURES = 2;
+const CLE = 'protocole_attaque_v1';
+
+// ============================================================ protocole
+function prise(id, serie, tempo, subdiv, clic, cordes, attaque, corde, geste, consigne){
+  return {id:id, serie:serie, tempo:tempo, subdiv:subdiv, clic:clic,
+          cordes:cordes, attaque:attaque, corde:corde, geste:geste, consigne:consigne};
+}
+const PROTOCOLE = [
+  prise('A1','A',60,1,1,'acier','mediator','mi grave (6)','corde à vide, une attaque par pulsation',
+    'Guitare acier, médiator. Corde de mi grave à vide. Une attaque par clic, régulière, sans nuance.'),
+  prise('A2','A',60,1,1,'acier','mediator','mi aigu (1)','corde à vide, une attaque par pulsation',
+    'Guitare acier, médiator. Corde de mi aigu à vide. Une attaque par clic, régulière, sans nuance.'),
+  prise('A3','A',60,1,1,'nylon','doigt','mi grave (6)','corde à vide, une attaque par pulsation',
+    'Guitare nylon, index (pas de médiator). Corde à vide. Une attaque par clic, régulière.'),
+  prise('A4','A',60,1,1,'acier','mediator','six cordes','accord plaqué, battement descendant',
+    'Guitare acier, médiator. Accord plaqué sur les six cordes, battement descendant. Un accord par clic.'),
+  prise('A5','A',60,1,1,'acier','mediator','mi grave (6)','palm mute faible, volume délibérément bas',
+    'Guitare acier, médiator. Palm mute, volume délibérément faible — joue doucement, à la limite du sourd. Une attaque par clic.'),
+  prise('A6','A',60,1,1,'acier','main gauche','corde grave','hammer-on / pull-off alternés, main droite immobile',
+    'Guitare acier. Une seule attaque au médiator pour lancer la corde, puis hammer-on et pull-off alternés, main droite immobile. Un mouvement par clic.'),
+
+  prise('B1','B',60,1,1,'acier','mediator','mi grave (6)','corde à vide, une attaque par pulsation de grille',
+    'Acier, médiator, mi grave à vide. Une attaque par clic. Ne change ni de position ni de médiator jusqu\u2019à la fin de la série B.'),
+  prise('B2','B',90,1,1,'acier','mediator','mi grave (6)','corde à vide, une attaque par pulsation de grille',
+    'Acier, médiator, mi grave à vide. Une attaque par clic. Même position, même médiator.'),
+  prise('B3','B',120,1,1,'acier','mediator','mi grave (6)','corde à vide, une attaque par pulsation de grille',
+    'Acier, médiator, mi grave à vide. Une attaque par clic. Même position, même médiator.'),
+  prise('B4','B',90,2,2,'acier','mediator','mi grave (6)','corde à vide, une attaque par pulsation de grille',
+    'Acier, médiator, mi grave à vide. Une attaque par clic — le clic est maintenant sur les croches. Même position.'),
+  prise('B5','B',120,2,2,'acier','mediator','mi grave (6)','corde à vide, une attaque par pulsation de grille',
+    'Acier, médiator, mi grave à vide. Une attaque par clic, croches à 120. Même position. Dernière prise de la série B.'),
+
+  prise('C1','C',80,2,1,'acier','mediator','mi grave (6)','croches régulières, clic sur les temps seulement',
+    'Acier, médiator, mi grave à vide. Joue des croches régulières — deux attaques par clic. Le clic ne sonne que sur les temps.'),
+  prise('C2','C',80,2,2,'acier','mediator','mi grave (6)','croches régulières, clic sur les croches',
+    'Acier, médiator, mi grave à vide. Mêmes croches régulières — mais le clic sonne maintenant sur chaque croche.')
+];
+
+function pasDe(p){ return 60 / p.tempo / p.subdiv; }
+function dureeDe(p){ return Math.max(30, 48 * pasDe(p)); }
+function attenduesDe(p){ return Math.round(dureeDe(p) / pasDe(p)); }
+const NOM_CLIC = ['muet','sur les temps','toutes subdivisions'];
+
+// ============================================================ état
+const E = {
+  ctx:null, flux:null, piste:null, source:null, worklet:null,
+  appareil:null, casqueConfirme:null,
+  i:0,                  // index dans PROTOCOLE
+  resultats:[],         // prises terminées, rejetées comprises
+  encours:null,         // prise en capture
+  timer:null, raf:null,
+  crete:0
+};
+const $ = id => document.getElementById(id);
+
+// ============================================================ audio
+async function demarrer(){
+  try{
+    if(!window.AudioWorkletNode) return etatPrep('Ce navigateur ne gère pas AudioWorklet.', true);
+    const flux = await navigator.mediaDevices.getUserMedia({
+      audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1}
+    });
+    E.flux = flux;
+    E.piste = flux.getAudioTracks()[0];
+    E.ctx = new (window.AudioContext || window.webkitAudioContext)({latencyHint:'interactive'});
+    await E.ctx.resume();
+
+    const src = $('src-worklet').textContent;
+    const url = URL.createObjectURL(new Blob([src], {type:'application/javascript'}));
+    await E.ctx.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+
+    E.source = E.ctx.createMediaStreamSource(flux);
+    E.worklet = new AudioWorkletNode(E.ctx, 'detecteur-attaque', {
+      numberOfInputs:1, numberOfOutputs:0, channelCount:1,
+      processorOptions:{N:FIGE.N, HOP:FIGE.HOP, sens:FIGE.sensibilite, minIOI:FIGE.ecart_min_ms/1000}
+    });
+    E.worklet.port.onmessage = recevoir;
+    E.source.connect(E.worklet);
+
+    // état effectif du micro, pas la valeur demandée
+    let reglagesPiste = {};
+    try{ reglagesPiste = E.piste.getSettings ? E.piste.getSettings() : {}; }catch(err){ reglagesPiste = {}; }
+    E.appareil = {
+      userAgent: navigator.userAgent,
+      sampleRate: E.ctx.sampleRate,
+      baseLatency_s: (typeof E.ctx.baseLatency === 'number') ? +E.ctx.baseLatency.toFixed(6) : null,
+      outputLatency_s: (typeof E.ctx.outputLatency === 'number') ? +E.ctx.outputLatency.toFixed(6) : null,
+      micro_getSettings: reglagesPiste,
+      micro_label: E.piste && E.piste.label ? E.piste.label : null,
+      casque_confirme: true,
+      casque_confirme_le: E.casqueConfirme
+    };
+    afficherAppareil();
+    $('secPrep').hidden = true;
+    $('secAppareil').hidden = false;
+    $('secPrise').hidden = false;
+    $('secAvancement').hidden = false;
+    $('secExport').hidden = false;
+    montrerPrise();
+    boucleNiveau();
+  }catch(err){
+    etatPrep('Micro indisponible : ' + (err && err.message ? err.message : err), true);
+  }
+}
+
+function recevoir(e){
+  const d = e.data;
+  if(d.type === 'niveau'){ E.crete = d.crete; return; }
+  if(d.type !== 'onset') return;
+  const c = E.encours;
+  if(!c) return;                       // hors prise : rien n'est conservé
+  if(d.t < c.t0 || d.t > c.fin) return;
+  c.detections.push({
+    temps_s: +d.t.toFixed(5),
+    intensite_db: +(20*Math.log10(Math.max(d.crete, 1e-6))).toFixed(2)
+  });
+}
+
+// ============================================================ métronome
+function clic(quand, fort, surTemps){
+  const o = E.ctx.createOscillator();
+  const g = E.ctx.createGain();
+  o.type = 'square';
+  o.frequency.value = fort ? 1600 : (surTemps ? 1100 : 820);
+  const a = fort ? 0.22 : (surTemps ? 0.13 : 0.07);
+  g.gain.setValueAtTime(0.0001, quand);
+  g.gain.exponentialRampToValueAtTime(a, quand + 0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001, quand + 0.035);
+  o.connect(g); g.connect(E.ctx.destination);
+  o.start(quand); o.stop(quand + 0.05);
+}
+
+function ordonnancer(){
+  const c = E.encours;
+  if(!c || !E.ctx) return;
+  const parMes = c.p.subdiv * MESURE;
+  while(c.prochain < E.ctx.currentTime + 0.15 && c.prochain <= c.fin){
+    const pos = c.k % parMes;
+    const surTemps = (pos % c.p.subdiv) === 0;
+    const jouer = c.p.clic === 2 || (c.p.clic === 1 && surTemps);
+    if(jouer){
+      clic(c.prochain, pos === 0, surTemps);
+      c.clics.push({temps_s:+c.prochain.toFixed(5), sur_temps:surTemps});
+    }
+    c.k++;
+    c.prochain += c.pas;
+  }
+}
+
+// ============================================================ déroulement
+function montrerPrise(){
+  const p = PROTOCOLE[E.i];
+  $('priseId').textContent = p.id;
+  $('noteSerie').textContent = 'série ' + p.serie + ' · ' + (E.i+1) + ' sur ' + PROTOCOLE.length;
+  $('priseConsigne').textContent = p.consigne;
+  $('mTempo').textContent = p.tempo + ' bpm';
+  $('mGrille').textContent = ['—','noires','croches','triolets','doubles'][p.subdiv]
+    + ' · ' + Math.round(pasDe(p)*1000) + ' ms';
+  $('mClic').textContent = NOM_CLIC[p.clic];
+  $('mDuree').textContent = Math.round(dureeDe(p)) + ' s';
+  $('mAttendues').textContent = attenduesDe(p);
+  basculer('attente');
+  dessinerAvancement();
+}
+
+function basculer(phase){
+  $('blocAttente').hidden = phase !== 'attente';
+  $('blocDecompte').hidden = phase !== 'decompte';
+  $('blocEnreg').hidden = phase !== 'enregistrement';
+  $('blocFin').hidden = phase !== 'fin';
+  $('blocRejet').hidden = phase !== 'rejet';
+}
+
+function lancerPrise(){
+  const p = PROTOCOLE[E.i];
+  const pas = pasDe(p);
+  const battue = 60 / p.tempo;
+  const t0 = E.ctx.currentTime + 0.6;
+  const ancre = t0 + DECOMPTE_MESURES * MESURE * battue;
+  const duree = dureeDe(p);
+  E.encours = {
+    p:p, pas:pas, t0:t0, ancre:ancre, fin:ancre + duree, duree:duree,
+    k:0, prochain:t0, detections:[], clics:[]
+  };
+  basculer('decompte');
+  E.timer = setInterval(ordonnancer, 25);
+  E.raf = requestAnimationFrame(tic);
+}
+
+function tic(){
+  const c = E.encours;
+  if(!c) return;
+  const t = E.ctx.currentTime;
+  if(t < c.ancre){
+    const battue = 60 / c.p.tempo;
+    const reste = c.ancre - t;
+    $('decompte').textContent = Math.max(1, Math.ceil(reste / battue));
+    if($('blocDecompte').hidden) basculer('decompte');
+  }else if(t < c.fin){
+    if($('blocEnreg').hidden) basculer('enregistrement');
+    const ecoule = t - c.ancre;
+    $('restant').textContent = Math.ceil(c.duree - ecoule) + ' s';
+    $('barreProgres').style.width = (100*ecoule/c.duree).toFixed(1) + '%';
+    $('compteurDet').textContent = c.detections.length;
+  }else{
+    return terminerPrise();
+  }
+  E.raf = requestAnimationFrame(tic);
+}
+
+function terminerPrise(){
+  clearInterval(E.timer); E.timer = null;
+  if(E.raf !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(E.raf);
+  E.raf = null;
+  const c = E.encours;
+  const p = c.p;
+  const enr = {
+    id:p.id, serie:p.serie, consigne:p.consigne,
+    rejetee:false, motif_rejet:null,
+    instrument:{cordes:p.cordes, attaque:p.attaque, corde:p.corde, geste:p.geste},
+    reglages:{
+      tempo:p.tempo, subdivision:p.subdiv, temps_par_mesure:MESURE,
+      clic:NOM_CLIC[p.clic], decalage_ms:FIGE.decalage_ms,
+      sensibilite:FIGE.sensibilite, ecart_min_ms:FIGE.ecart_min_ms,
+      porte_dbfs:FIGE.porte_dbfs, echauffement_s:FIGE.echauffement_s,
+      fenetre_fft:FIGE.N, saut_fft:FIGE.HOP,
+      echantillonnage_hz:E.ctx.sampleRate,
+      decompte_mesures:DECOMPTE_MESURES
+    },
+    ancre_s:+c.ancre.toFixed(5),
+    pas_s:+c.pas.toFixed(6),
+    debut_utile_s:+c.ancre.toFixed(5),
+    fin_utile_s:+c.fin.toFixed(5),
+    debut_capture_s:+c.t0.toFixed(5),
+    attaques_attendues:attenduesDe(p),
+    chef_fenetre_ms:FIGE.chef_fenetre_ms,
+    detections:marquerChefs(c.detections),
+    clics:c.clics
+  };
+  E.encours = null;
+  E.resultats.push(enr);
+  sauver();
+  const utiles = enr.detections.filter(d => d.temps_s >= enr.debut_utile_s).length;
+  $('resumePrise').textContent = 'Prise ' + p.id + ' terminée — ' + utiles
+    + ' détections dans la fenêtre utile, ' + enr.attaques_attendues + ' attaques attendues.';
+  basculer('fin');
+  dessinerAvancement();
+}
+
+// Marquage informatif : aucune détection n'est retirée ni fusionnée.
+function marquerChefs(det){
+  const w = FIGE.chef_fenetre_ms/1000;
+  let precedent = -1e9;
+  return det.map(d => {
+    const chef = (d.temps_s - precedent) > w;
+    precedent = d.temps_s;
+    return {temps_s:d.temps_s, intensite_db:d.intensite_db, chef:chef};
+  });
+}
+
+function priseSuivante(){
+  E.i++;
+  if(E.i >= PROTOCOLE.length){
+    $('secPrise').hidden = true;
+    $('etatExport').textContent = 'Protocole terminé — ' + E.resultats.length
+      + ' prises enregistrées. Exporte le fichier et transmets-le pour analyse.';
+    dessinerAvancement();
+    sauver();
+    return;
+  }
+  montrerPrise();
+  sauver();
+}
+
+function confirmerRejet(){
+  const der = E.resultats[E.resultats.length - 1];
+  const txt = $('motifTexte').value.trim();
+  der.rejetee = true;
+  der.motif_rejet = $('motif').value + (txt ? ' — ' + txt : '');
+  $('motifTexte').value = '';
+  sauver();
+  montrerPrise();          // même index : on refait la prise
+}
+
+// ============================================================ avancement
+function dessinerAvancement(){
+  const ol = $('listeAvancement');
+  ol.textContent = '';
+  const faites = {};
+  for(const r of E.resultats) if(!r.rejetee) faites[r.id] = true;
+  const rejets = {};
+  for(const r of E.resultats) if(r.rejetee) rejets[r.id] = (rejets[r.id]||0) + 1;
+  PROTOCOLE.forEach((p, k) => {
+    const li = document.createElement('li');
+    if(faites[p.id]) li.className = 'faite';
+    if(k === E.i && !faites[p.id]) li.className = 'courante';
+    if(rejets[p.id]) li.className += ' rejetee';
+    const a = document.createElement('span');
+    a.className = 'pastille';
+    a.textContent = faites[p.id] ? '✓' : (k === E.i ? '▸' : '·');
+    const b = document.createElement('span');
+    b.className = 'lib';
+    b.textContent = p.id + ' — ' + p.geste;
+    const c = document.createElement('span');
+    c.className = 'st';
+    c.textContent = rejets[p.id] ? (rejets[p.id] + ' rejet' + (rejets[p.id]>1?'s':''))
+                    : (faites[p.id] ? 'faite' : Math.round(dureeDe(p)) + ' s');
+    li.append(a, b, c);
+    ol.append(li);
+  });
+  const n = Object.keys(faites).length;
+  $('noteAvancement').textContent = n + ' / ' + PROTOCOLE.length + ' validées';
+}
+
+// ============================================================ persistance
+function sauver(){
+  try{
+    localStorage.setItem(CLE, JSON.stringify({
+      i:E.i, resultats:E.resultats, appareil:E.appareil, date:new Date().toISOString()
+    }));
+  }catch(err){ /* quota ou mode privé : la session reste en mémoire */ }
+}
+function charger(){
+  try{ return JSON.parse(localStorage.getItem(CLE)); }catch(err){ return null; }
+}
+
+// ============================================================ export
+function exporter(){
+  const donnees = {
+    protocole:'analyse-attaque/capture',
+    version:1,
+    date:new Date().toISOString(),
+    chaine_figee:FIGE,
+    appareil:E.appareil,
+    prises:E.resultats
+  };
+  const b = new Blob([JSON.stringify(donnees, null, 1)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b);
+  a.download = 'protocole-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ============================================================ divers
+function etatPrep(txt, err){
+  const el = $('etatPrep');
+  el.textContent = txt;
+  el.style.color = err ? '#8b3a20' : '';
+}
+function afficherAppareil(){
+  const dl = $('dlAppareil');
+  dl.textContent = '';
+  const s = E.appareil.micro_getSettings || {};
+  const lignes = [
+    ['Échantillonnage', E.appareil.sampleRate + ' Hz'],
+    ['Latence d\u2019entrée', E.appareil.baseLatency_s !== null ? (E.appareil.baseLatency_s*1000).toFixed(1) + ' ms' : 'non communiquée'],
+    ['Latence de sortie', E.appareil.outputLatency_s !== null ? (E.appareil.outputLatency_s*1000).toFixed(1) + ' ms' : 'non communiquée'],
+    ['Annulation d\u2019écho', String(s.echoCancellation !== undefined ? s.echoCancellation : 'non communiqué')],
+    ['Réduction de bruit', String(s.noiseSuppression !== undefined ? s.noiseSuppression : 'non communiqué')],
+    ['Gain automatique', String(s.autoGainControl !== undefined ? s.autoGainControl : 'non communiqué')],
+    ['Micro', E.appareil.micro_label || 'non communiqué']
+  ];
+  for(const [k,v] of lignes){
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    dl.append(dt, dd);
+  }
+  const s2 = E.appareil.micro_getSettings || {};
+  if(s2.autoGainControl === true || s2.noiseSuppression === true || s2.echoCancellation === true){
+    const av = document.createElement('dd');
+    av.style.gridColumn = '1 / -1';
+    av.className = 'alerte';
+    av.textContent = 'Le système a réimposé un traitement du micro malgré la demande. Les intensités seront compressées ; les instants restent justes. L\u2019état effectif est journalisé dans l\u2019export.';
+    dl.append(av);
+  }
+}
+function boucleNiveau(){
+  $('vuNiveau').style.width = Math.min(100, E.crete*100).toFixed(0) + '%';
+  $('alerteSat').hidden = E.crete < 0.97;
+  setTimeout(boucleNiveau, 100);
+}
+
+// ============================================================ liaisons
+$('casque').addEventListener('change', e => {
+  $('btnMicro').disabled = !e.target.checked;
+  E.casqueConfirme = e.target.checked ? new Date().toISOString() : null;
+  etatPrep(e.target.checked ? 'Prêt à démarrer.' : 'Coche la confirmation pour activer le bouton.');
+});
+$('btnMicro').addEventListener('click', demarrer);
+$('btnDemarrer').addEventListener('click', lancerPrise);
+$('btnSuivante').addEventListener('click', priseSuivante);
+$('btnRefaire').addEventListener('click', () => basculer('rejet'));
+$('btnAnnulerRejet').addEventListener('click', () => basculer('fin'));
+$('btnConfirmerRejet').addEventListener('click', confirmerRejet);
+$('btnExport').addEventListener('click', exporter);
+$('btnRaz').addEventListener('click', () => {
+  if(E.resultats.length && !window.confirm('Effacer toutes les prises enregistrées ?')) return;
+  try{ localStorage.removeItem(CLE); }catch(err){}
+  location.reload();
+});
+$('btnReprendre').addEventListener('click', () => {
+  const s = charger();
+  if(s){ E.i = s.i || 0; E.resultats = s.resultats || []; }
+  $('secReprise').hidden = true;
+});
+$('btnJeter').addEventListener('click', () => {
+  try{ localStorage.removeItem(CLE); }catch(err){}
+  $('secReprise').hidden = true;
+});
+
+(function init(){
+  const s = charger();
+  if(s && s.resultats && s.resultats.length){
+    const n = s.resultats.filter(r => !r.rejetee).length;
+    $('repriseInfo').textContent = 'Une session du ' + (s.date || '').slice(0,16).replace('T',' à ')
+      + ' contient ' + n + ' prise' + (n>1?'s':'') + ' validée' + (n>1?'s':'')
+      + '. Reprendre demande de réactiver le micro.';
+    $('secReprise').hidden = false;
+  }
+  dessinerAvancement();
+})();
+</script>
+</body>
+</html>
