@@ -492,6 +492,7 @@ const E = {
   onsets:[],          // détections brutes du worklet
   events:[],          // gestes musicaux : détections regroupées
   courbe:[],          // accroche glissante {t, R, Rb, m}
+  tempoCache:null,
   odf:[], seuil:[],   // historique pour la courbe
   odfMax:0.02,
   niveau:0, crete:0,
@@ -650,7 +651,7 @@ function regrouper(){
   E.events = [];
   let cur = null;
   for(const o of E.onsets){
-    if(!cur || o.t - cur.tFin > PARAM.fusion){
+    if(!cur || o.t - cur.tFin > PARAM.fusion || o.t - cur.t > 2.5*PARAM.fusion){
       cur = {t:o.t, tFin:o.t, ancre:o.ancre, pas:o.pas, db:o.db, n:1};
       E.events.push(cur);
       o.chef = true;
@@ -669,7 +670,7 @@ function regrouper(){
 // en le disant, plutôt que de mélanger deux référentiels.
 function nouvelleSerie(motif){
   const n = E.events.length;
-  E.onsets = []; E.events = []; E.courbe = [];
+  E.onsets = []; E.events = []; E.courbe = []; E.tempoCache = null;
   E.maj = true;
   if(n) etat('Série repartie — ' + motif + '. Les ' + n + ' attaques précédentes '
              + 'portaient sur une autre référence : elles ne sont plus comparables.');
@@ -983,25 +984,55 @@ function courbeAccroche(){
   return c;
 }
 
+// Pas de grille réellement joué — le plus fin qui explique le jeu — converti en bpm
+// via la subdivision déclarée. Deux pièges successivement rencontrés :
+//   1. Ancrer la recherche sur l'intervalle médian (v1.3) : dès que le jeu mêle des
+//      valeurs, la médiane glisse vers les valeurs courtes et la pulsation sort de la
+//      plage. Session à 40 bpm, médiane 1067 ms → réponse 58,7 bpm.
+//   2. Balayer large à résolution fixe : à 1 s de période sur 117 s de jeu, un pas de
+//      grille de 9 ms accumule 420 ms de dérive et le vrai maximum est manqué.
+// D'où une estimation par étages : grossière sur une portée courte (exigence de
+// résolution faible), puis affinée en élargissant la portée.
 function tempoJoue(){
-  const ts = E.events.map(e => e.t);
-  const iois = [];
-  for(let i=1;i<ts.length;i++){
-    const d = ts[i] - ts[i-1];
-    if(d > 0.12 && d < 2.5) iois.push(d);
-  }
-  if(iois.length < 6) return null;
-  iois.sort((a,b) => a-b);
-  const med = iois[iois.length >> 1];
-  let meilleur = null;
-  for(let i=0;i<=300;i++){
-    const p = med * (0.78 + 0.44*i/300);
+  const ev = E.events;
+  if(ev.length < 10) return null;
+  // clé de cache : elle doit changer quand la série change, pas seulement quand elle
+  // s'allonge. Recalcul tous les huit gestes — l'estimation coûte ~200 000 itérations.
+  const cle = Math.floor(ev.length/8) + ':' + PARAM.subdiv + ':' + ev[0].t.toFixed(2);
+  if(E.tempoCache && E.tempoCache.cle === cle) return E.tempoCache.val;
+  const ts = ev.slice(-150).map(e => e.t);
+  const fin = ts[ts.length-1];
+  const R = (seg, p) => {
     let C = 0, S = 0;
-    for(const t of ts){ const a = 2*Math.PI*t/p; C += Math.cos(a); S += Math.sin(a); }
-    const R = Math.hypot(C, S)/ts.length;
-    if(!meilleur || R > meilleur.R) meilleur = {R:R, p:p};
+    for(const t of seg){ const a = 2*Math.PI*t/p; C += Math.cos(a); S += Math.sin(a); }
+    return Math.hypot(C/seg.length, S/seg.length);
+  };
+  let court = ts.filter(t => t > fin - 20);
+  if(court.length < 8) court = ts.slice(-24);
+  if(court.length < 8) return null;
+  const pMax = Math.min(3.0, (court[court.length-1] - court[0])/4);
+  if(!(pMax > 0.2)) return null;
+
+  const lr = Math.log(pMax/0.2);
+  let p = 0.2, meilleur = -1;
+  for(let i=0;i<500;i++){
+    const q = 0.2*Math.exp(lr*i/499), r = R(court, q);
+    if(r > meilleur){ meilleur = r; p = q; }
   }
-  return {pas:meilleur.p, R:meilleur.R, bpm:60/(meilleur.p*PARAM.subdiv)};
+  for(const portee of [60, Infinity]){
+    let seg = ts.filter(t => t > fin - portee);
+    if(seg.length < 8) seg = ts;
+    const larg = 0.06*p;
+    let bq = p, br = -1;
+    for(let i=0;i<=400;i++){
+      const q = p - larg + 2*larg*i/400, r = R(seg, q);
+      if(r > br){ br = r; bq = q; }
+    }
+    p = bq;
+  }
+  const val = {pas:p, R:R(ts,p), bpm:60/(p*PARAM.subdiv)};
+  E.tempoCache = {cle:cle, val:val};
+  return val;
 }
 
 const NOMS_SUBDIV = ['noires','croches','triolets','doubles'];
@@ -1061,7 +1092,10 @@ function bilan(){
   const msg = [];
   const surFen = 'sur les ' + f.n + ' derniers gestes';
 
-  if(aj.m > 1 && aj.H[aj.m-1] > f.R + 0.1){
+  // Le discriminateur ne doit parler que si l'autre subdivision explique VRAIMENT le
+  // jeu : retenir la moins mauvaise harmonique parmi des valeurs toutes basses revient
+  // à diagnostiquer une subdivision sur du bruit.
+  if(aj.m > 1 && aj.H[aj.m-1] > 0.45 && aj.H[aj.m-1] > f.R + 0.15){
     d.className = 'alerte';
     msg.push('Tu joues en ' + NOMS_SUBDIV[aj.m-1] + ' ' + surFen
       + ' : l\u2019accroche passe de ' + Math.round(100*f.R) + ' % sur la grille réglée à '
@@ -1093,6 +1127,11 @@ function bilan(){
     if(st.glob.n > 2*f.n && Math.abs(dR) >= 8)
       msg.push(dR > 0 ? 'Tu progresses : ' + dR + ' points au-dessus de ta moyenne de session.'
                       : 'Tu perds ' + (-dR) + ' points par rapport à ta moyenne de session.');
+    if(st.tempo && aj.m === 1){   // sinon le message de subdivision explique déjà l'écart
+      const ec = 100*Math.abs(st.tempo.bpm - PARAM.tempo)/PARAM.tempo;
+      if(ec > 6) msg.push('Attention : tu joues autour de ' + Math.round(st.tempo.bpm)
+        + ' bpm alors que la grille est à ' + PARAM.tempo + ' bpm.');
+    }
     if(Math.abs(f.biais) > 15) msg.push('Biais de ' + Math.round(f.biais) + ' ms : '
       + (f.biais > 0 ? 'tu traînes, ou la latence n\u2019est pas calée'
                      : 'tu anticipes, ou le calage est trop généreux')
