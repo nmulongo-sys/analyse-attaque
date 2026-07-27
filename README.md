@@ -5,7 +5,7 @@ micro du navigateur. Destiné à l'usage pédagogique : montrer à l'élève où
 réellement ses attaques par rapport à la grille, et comment il répartit ses accents.
 
 **En ligne** : https://nmulongo-sys.github.io/analyse-attaque/
-**Statut** : v1.1 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
+**Statut** : v1.2 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
 
 ## Utilisation
 
@@ -108,6 +108,26 @@ redimensionnement. Redessiner l'ensemble à 60 Hz ne servait qu'à chauffer le t
 désactivation, le graphique d'intensité ne mesure plus rien. Certains Android les
 réimposent malgré tout — les temps restent justes, les vélocités sont compressées.
 
+### Référentiel temporel — le point le plus délicat
+
+Un écart à la grille n'a de sens que rapporté à la référence contre laquelle l'attaque a
+été jouée. Chaque attaque mémorise donc **sa propre ancre et son propre pas** :
+
+```js
+o = { t, ancre, pas, db, force }      // référence figée à l'instant de la détection
+placer(o)                             // (re)calcule k, dev, pos à partir de CETTE référence
+```
+
+Seul le décalage de latence peut être rejoué après coup : c'est une translation pure, elle
+préserve la structure. Tout le reste — nouveau contexte audio, nouvelle ancre de
+métronome, changement de tempo ou de subdivision — définit un **nouveau référentiel**, et
+les mesures antérieures deviennent incomparables. Dans ce cas `nouvelleSerie(motif)` les
+efface en l'annonçant, plutôt que de les mélanger silencieusement.
+
+C'est le défaut corrigé en v1.2 : les anciennes attaques étaient recalculées contre une
+ancre qui n'existait pas au moment où elles avaient été jouées. Le test `vserie` couvre
+les quatre points d'entrée.
+
 ### Grille et écarts
 
 La grille est ancrée sur `E.ancre` (instant `AudioContext.currentTime` du temps 1), avec
@@ -150,6 +170,30 @@ les autres temps, 820 Hz sur les subdivisions.
   calibre pas.
 - **Dans ±25 ms**, **écart dynamique** (amplitude max − min en dB).
 
+### Statistique — pourquoi elle est circulaire
+
+Les écarts à la grille sont des **phases**, pas des longueurs : ils sont bornés à ±pas/2
+et se referment sur eux-mêmes. La moyenne et l'écart-type linéaires y sont trompeurs. Un
+jeu sans aucun rapport avec la grille produit mécaniquement un écart-type de **pas/√12**
+— à 80 bpm en croches, 108 ms — qu'on peut prendre pour une mesure de régularité alors que
+c'est exactement le contraire : la signature du bruit uniforme.
+
+`statistiques()` calcule donc, sur les phases `2π·dev/pas` :
+
+- **R**, longueur du vecteur résultant — l'« accroche à la grille », de 0 à 1 ;
+- le **test de Rayleigh** (`z = nR²`, p-valeur associée) ;
+- le **biais** comme angle moyen, et la **régularité** comme écart-type circulaire
+  `pas/2π · √(−2 ln R)`.
+
+Tant que `p ≥ 0,001` ou `R ≤ 0,25`, l'app **n'affiche ni biais ni régularité** et explique
+pourquoi. Le profil d'accentuation est neutralisé de la même façon : sans accroche, chaque
+attaque est rangée dans une case arbitraire de la mesure.
+
+`tempoJoue()` estime en parallèle le pas réellement joué, par recherche du maximum
+d'accroche autour de l'intervalle médian entre attaques. Indépendant de la grille, il
+répond à « à quel tempo joue-t-il », pas à « respecte-t-il le mien » — et permet de
+diagnostiquer un simple écart de tempo plutôt que de conclure à un jeu irrégulier.
+
 ### Export JSON
 
 ```json
@@ -188,6 +232,37 @@ instrumenté sous Node :
 À confirmer sur guitare et micro réels : le banc est synthétique.
 
 ## Journal de développement
+
+### 2026-07-27 — v1.2, référentiel temporel et honnêteté statistique
+Session de test réelle : 122 attaques, métronome actif, accords plaqués réguliers.
+Résultat affiché : σ = 115,4 ms, 9 % dans ±25 ms — soit très exactement ce que produirait
+un tirage uniforme (pas/√12 = 108 ms, 50/375 = 13 %). Autrement dit l'app mesurait du
+bruit et le présentait comme une performance. Diagnostic et correctifs :
+
+- **Cause première — recalcul contre une référence postérieure.** `recalculer()`
+  réévaluait *toutes* les attaques mémorisées contre l'ancre courante. Redémarrer le
+  métronome posait une nouvelle ancre, donc randomisait la phase de tout l'historique.
+  Chaque attaque emporte désormais sa propre ancre et son propre pas.
+- **Second défaut — changement de subdivision sans réancrage.** Le pas de calcul changeait
+  mais `E.prochain` / `E.k` continuaient sur l'ancienne cadence : la grille calculée et les
+  clics entendus divergeaient définitivement.
+- **Troisième défaut — base de temps repartant de zéro.** Arrêter le micro ferme
+  l'`AudioContext` ; le rouvrir en crée un autre dont `currentTime` repart près de 0,
+  tandis que les attaques mémorisées gardaient les horodatages de l'ancien.
+- Introduction de `nouvelleSerie(motif)` : toute redéfinition du référentiel efface les
+  mesures en l'annonçant, au lieu de mélanger deux repères.
+- **Statistique circulaire et test de Rayleigh.** L'app refuse désormais d'afficher biais
+  et régularité tant que l'accroche à la grille n'est pas significative, et explique ce
+  qu'elle observe. Ajout de l'accroche (R) et du tempo réellement joué, qui distingue un
+  jeu irrégulier d'un simple écart de tempo.
+- Neutralisation du profil d'accentuation en l'absence d'accroche.
+- **Export et effacement pilotés par la présence de mesures**, plus par l'état du micro :
+  ils étaient grisés après l'arrêt du micro alors que l'interface annonçait que les
+  mesures restaient disponibles.
+- Avertissement au-delà de 30 dB d'écart dynamique, indice de fausses détections faibles.
+- Tests ajoutés : `vstats` (cinq scénarios de jeu à propriétés connues — serré, biaisé,
+  lâche, tempo décalé, uniforme) et `vserie` (les quatre points d'entrée du référentiel,
+  plus l'état des boutons).
 
 ### 2026-07-27 — v1.1, correctif d'affichage
 - **Défaut bloquant corrigé : emballement du dimensionnement des canevas.** `prepare()`
