@@ -5,7 +5,14 @@ micro du navigateur. Destiné à l'usage pédagogique : montrer à l'élève où
 réellement ses attaques par rapport à la grille, et comment il répartit ses accents.
 
 **En ligne** : https://nmulongo-sys.github.io/analyse-attaque/
-**Statut** : v1.5 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
+**Statut** : v1.6 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
+
+## Page compagnon : protocole de capture
+
+`protocole.html` ([en ligne](https://nmulongo-sys.github.io/analyse-attaque/protocole.html))
+enchaîne 13 prises à chaîne de détection figée et produit **un seul JSON brut**, sans
+aucune analyse : c'est l'instrument de mesure, quand `index.html` est l'outil
+d'entraînement. Voir `PROTOCOLE.md` pour le déroulement et le schéma du fichier.
 
 ## Utilisation
 
@@ -283,6 +290,26 @@ instrumenté sous Node :
 À confirmer sur guitare et micro réels : le banc est synthétique.
 
 ## Journal de développement
+
+### 2026-07-27 — v1.6, page de protocole de capture
+Ajout de `protocole.html` et `PROTOCOLE.md`. Séparation nette des deux usages : `index.html`
+est l'outil d'entraînement, qui interprète en temps réel ; `protocole.html` est
+l'instrument de mesure, qui ne fait que piloter et capturer.
+
+Motif : les trois premières séances ne comparaient pas la même tâche — valeurs mêlées
+contre grille grossière d'un côté, un geste par clic de l'autre. Aucune conclusion sur la
+dispersion n'est possible tant que le geste, l'instrument, la corde et le rapport
+geste/clic ne sont pas tenus fixes. La page les impose.
+
+Points de conception qui comptent :
+- `ecart_min_ms = 30`, volontairement bas, sur toutes les prises : le regroupement se fera
+  en post-traitement à plusieurs valeurs sur le même flux, seul moyen de savoir si les
+  doublons à 59–75 ms sont réels ou fabriqués par le paramètre.
+- Aucune fusion destructive avant export ; `chef` n'est qu'un marquage informatif.
+- État **effectif** du micro journalisé via `track.getSettings()`, pas la valeur demandée.
+- Casque verrouillant : sans confirmation, pas de démarrage.
+- Sauvegarde `localStorage` après chaque prise — quinze minutes de jeu ne se perdent pas
+  sur un rechargement.
 
 ### 2026-07-27 — v1.5, découpage en passages
 Troisième export réel (90 bpm, subdivision croches, 52 gestes pour 82 détections). Prise
