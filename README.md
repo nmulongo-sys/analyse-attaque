@@ -5,7 +5,7 @@ micro du navigateur. Destiné à l'usage pédagogique : montrer à l'élève où
 réellement ses attaques par rapport à la grille, et comment il répartit ses accents.
 
 **En ligne** : https://nmulongo-sys.github.io/analyse-attaque/
-**Statut** : v1.3 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
+**Statut** : v1.4 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
 
 ## Utilisation
 
@@ -270,6 +270,34 @@ instrumenté sous Node :
 À confirmer sur guitare et micro réels : le banc est synthétique.
 
 ## Journal de développement
+
+### 2026-07-27 — v1.4, estimation du tempo par étages
+Deuxième export réel (grille à 40 bpm, 42 gestes pour 51 détections, 44 s). La
+synchronisation est bonne — la période optimale vaut 1506 ms, soit 39,8 bpm — mais l'outil
+affichait « tempo joué : 58,7 bpm ». Trois défauts corrigés, tous trouvés par les bancs :
+
+- **Estimation du tempo ancrée sur l'intervalle médian.** Avec un jeu mêlant plusieurs
+  valeurs rythmiques, la médiane (1067 ms) tombait loin de la pulsation (1500 ms), et la
+  plage explorée (±22 %) excluait la bonne réponse. Remplacée par une estimation par
+  étages : passe grossière sur portée courte, puis affinages locaux sur portée croissante.
+  Un simple balayage large ne suffit pas — la résolution requise est `p²/(4·durée)`.
+- **Discriminateur de subdivision trop bavard.** Il retenait la moins mauvaise harmonique
+  même quand toutes étaient basses, et diagnostiquait donc une subdivision sur du bruit.
+  Il exige désormais une accroche alternative supérieure à 0,45 et à R₁ + 0,15.
+- **Clé de cache du tempo indexée sur le seul effectif** : elle ne s'invalidait pas quand
+  la série changeait à nombre de gestes constant. Elle inclut maintenant l'instant du
+  premier geste.
+- Chaînage des gestes borné : une suite de détections rapprochées ne peut plus s'agréger
+  au-delà de 2,5 fois la fenêtre de fusion.
+- Avertissement de tempo supprimé quand le discriminateur de subdivision a déjà parlé —
+  les deux messages disaient la même chose de deux façons contradictoires.
+- Test `vtempo` ajouté : rejeu des deux sessions réelles, plus un contrôle avec grille
+  volontairement fausse.
+
+*Note de méthode.* Le premier jeu d'essais de synthèse affirmait que l'estimateur devait
+répondre « 40 bpm » sur un signal dont les gestes tombaient en réalité sur une grille de
+doubles : la bonne réponse était 160 bpm pour une subdivision déclarée en noires.
+L'attendu du test était faux, pas le code. Vérifier l'attendu avant de corriger.
 
 ### 2026-07-27 — v1.3, gestes, fenêtre glissante et subdivision réellement jouée
 Analyse d'un export réel (293 détections, 132 s, métronome à 60 bpm, subdivision réglée
