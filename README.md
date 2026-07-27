@@ -5,7 +5,7 @@ micro du navigateur. Destiné à l'usage pédagogique : montrer à l'élève où
 réellement ses attaques par rapport à la grille, et comment il répartit ses accents.
 
 **En ligne** : https://nmulongo-sys.github.io/analyse-attaque/
-**Statut** : v1.2 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
+**Statut** : v1.3 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
 
 ## Utilisation
 
@@ -27,11 +27,17 @@ session.
 
 ## Ce que l'outil mesure — et ce qu'il ne mesure pas
 
-**Mesuré** : l'instant d'attaque de chaque événement sonore et son intensité crête.
+**Mesuré** : l'instant de chaque geste et son intensité crête, l'accroche du jeu à la
+grille, la subdivision réellement jouée, et l'évolution de tout cela au fil de la séance.
 
-**Non mesuré** : la hauteur des notes, l'accord joué, la propreté des cordes. Un accord
-plaqué compte pour une attaque, pas six. Deux cordes égrenées à moins de l'écart minimum
-fusionnent en une seule attaque.
+**Non mesuré** : la hauteur des notes, l'accord joué, la propreté des cordes.
+
+**Deux couches distinctes** : les *détections* (ce que le worklet trouve) et les *gestes*
+(ce que le musicien a fait). Un accord plaqué produit plusieurs détections — le balayage
+des cordes, et surtout le redéclenchement sur la résonance du corps dès la fin du temps
+réfractaire. Sur une session réelle de 132 s, 293 détections correspondaient à 163 gestes.
+Toutes les statistiques portent sur les gestes ; les détections restent visibles sur le
+bandeau de flux, les fusionnées en trait bas pâle.
 
 ## Architecture & conventions
 
@@ -170,6 +176,28 @@ les autres temps, 820 Hz sur les subdivisions.
   calibre pas.
 - **Dans ±25 ms**, **écart dynamique** (amplitude max − min en dB).
 
+### Fenêtre glissante — pourquoi il n'y a pas de chiffre global
+
+Une séance d'entraînement n'est pas homogène. Sur la session de référence, l'accroche
+passe de 34 % à 68 %, retombe à 18 %, puis remonte à 84 % — une moyenne sur les deux
+minutes ne décrit aucun de ces moments. Les chiffres du bilan portent donc sur les
+`PARAM.fenetre` derniers gestes (24 par défaut), et la courbe de progression montre le
+reste. La valeur de session ne sert qu'à situer la fenêtre : « tu progresses, 25 points
+au-dessus de ta moyenne ».
+
+### Discriminateur de subdivision
+
+R mesuré à la période `pas/m` est exactement la **m-ième harmonique** de la distribution
+de phase. Une exécution en croches sur une grille de noires donne R₁ ≈ 0 et R₂ élevé ;
+des triolets font ressortir R₃. La subdivision réellement jouée est donc l'argmax de
+R(pas/m) pour m ∈ {1,2,3,4} — un jeu propre sur la grille réglée donne m = 1, puisque
+des noires exactes tombent aussi sur toutes les subdivisions.
+
+C'est ce qui distingue **« joue autre chose que ce qui est réglé »** de **« joue mal »**.
+Sur la session de référence, le passage 29–82 s donnait R₁ = 0,27 et R₂ = 0,63 : le
+placement était bon, la grille était fausse. Sans ce test, l'outil concluait à une chute
+de niveau là où il y avait un simple changement de valeur rythmique.
+
 ### Statistique — pourquoi elle est circulaire
 
 Les écarts à la grille sont des **phases**, pas des longueurs : ils sont bornés à ±pas/2
@@ -194,20 +222,30 @@ d'accroche autour de l'intervalle médian entre attaques. Indépendant de la gri
 répond à « à quel tempo joue-t-il », pas à « respecte-t-il le mien » — et permet de
 diagnostiquer un simple écart de tempo plutôt que de conclure à un jeu irrégulier.
 
-### Export JSON
+### Export JSON (version 3)
 
 ```json
 {
-  "outil": "analyse-attaque", "version": 1, "date": "…ISO…",
-  "reglages": { "tempo": 80, "subdivision": 2, "temps_par_mesure": 4,
+  "outil": "analyse-attaque", "version": 3, "date": "…ISO…",
+  "reglages": { "tempo": 60, "subdivision": 1, "temps_par_mesure": 4,
                 "decalage_ms": 0, "sensibilite": 2.5, "ecart_min_ms": 55,
-                "echantillonnage_hz": 48000 },
-  "attaques": [ { "temps_s": 0.0, "case_grille": 0, "position_mesure": 0,
-                  "ecart_ms": 0.0, "intensite_db": 0.0 } ]
+                "fusion_ms": 120, "fenetre_gestes": 24, "echantillonnage_hz": 48000 },
+  "bilan": {
+    "gestes": 163, "detections": 293,
+    "fenetre": { "accroche": 0.73, "p": 1.2e-8, "biais_ms": -4.2, "sigma_ms": 127.2,
+                 "subdivision_ajustee": 1, "harmoniques": [0.73, 0.35, 0.18, 0.07] },
+    "session": { "accroche": 0.45, "sigma_ms": 200.1, "subdivision_ajustee": 1 },
+    "tempo_joue_bpm": 60.1, "ecart_dynamique_db": 47.0
+  },
+  "gestes":     [ { "temps_s": 0.0, "detections": 2, "etalement_ms": 64.0,
+                    "case_grille": 0, "position_mesure": 0,
+                    "ecart_ms": 0.0, "intensite_db": -8.7 } ],
+  "detections": [ { "temps_s": 0.0, "chef": true, "intensite_db": -8.7 } ]
 }
 ```
 
 `temps_s` est l'instant brut, hors décalage de latence ; `ecart_ms` l'intègre.
+`chef` distingue le geste de ses redéclenchements absorbés.
 
 ### Palette
 
@@ -232,6 +270,35 @@ instrumenté sous Node :
 À confirmer sur guitare et micro réels : le banc est synthétique.
 
 ## Journal de développement
+
+### 2026-07-27 — v1.3, gestes, fenêtre glissante et subdivision réellement jouée
+Analyse d'un export réel (293 détections, 132 s, métronome à 60 bpm, subdivision réglée
+sur « noires »). La période qui maximise l'accroche est 999,07 ms, soit 60,06 bpm : la
+synchronisation au métronome est certaine (p ≈ 6·10⁻¹⁶). Trois enseignements, trois
+changements :
+
+- **Le chiffre global ne décrivait aucun instant de jeu.** L'accroche variait de 18 % à
+  84 % au cours de la séance. Les statistiques portent désormais sur une fenêtre glissante
+  de 24 gestes, et une courbe de progression a été ajoutée. La valeur de session ne sert
+  plus qu'à situer la fenêtre.
+- **La subdivision réglée n'était pas celle jouée.** Entre 29 et 82 s, R₁ = 0,27 mais
+  R₂ = 0,63 : passage joué en croches sur une grille de noires. L'outil concluait à une
+  chute de niveau là où il y avait un changement de valeur rythmique. Ajout du
+  discriminateur harmonique (argmax de R à pas/m, m ∈ 1..4) : quand une autre subdivision
+  explique mieux le jeu, l'outil le dit et propose le réglage, au lieu de blâmer le
+  musicien.
+- **Le détecteur se redéclenchait sur la résonance.** 44 % des intervalles entre
+  détections tombaient sous 120 ms, groupés entre 61 et 75 ms — collés au plancher
+  réfractaire de 55 ms, donc artefact et non balayage de médiator. Introduction d'une
+  couche « gestes » : les détections séparées de moins de `PARAM.fusion` (120 ms par
+  défaut) sont fusionnées, instant du premier déclenchement, intensité du plus fort.
+  293 détections → 163 gestes. Le bandeau de flux montre les fusionnées en trait bas pâle.
+- Verdict reformulé pour ne plus se contredire : l'accroche dit s'il existe une relation
+  avec la grille, la dispersion en millisecondes dit si elle est musicalement bonne.
+- Export en version 3 : bilan structuré, gestes et détections séparés.
+- Test `vreel` ajouté : rejeu des 293 détections réelles à travers le code embarqué, avec
+  vérification que le passage en croches est identifié et que la progression finale est
+  reconnue.
 
 ### 2026-07-27 — v1.2, référentiel temporel et honnêteté statistique
 Session de test réelle : 122 attaques, métronome actif, accords plaqués réguliers.
