@@ -492,6 +492,7 @@ const E = {
   onsets:[],          // détections brutes du worklet
   events:[],          // gestes musicaux : détections regroupées
   courbe:[],          // accroche glissante {t, R, Rb, m}
+  nPassages:1,
   tempoCache:null,
   odf:[], seuil:[],   // historique pour la courbe
   odfMax:0.02,
@@ -663,6 +664,34 @@ function regrouper(){
     }
   }
   for(const e of E.events) placer(e);
+  // Un silence rompt la continuité : une fenêtre d'analyse qui l'enjambe compare des
+  // gestes séparés de plusieurs secondes et fait chuter l'accroche sans que le jeu ait
+  // changé. Observé sur une prise réelle : 93 % avant la pause, 72 % affichés après.
+  const seuil = Math.max(4*pasGrille(), 3);
+  let np = 0;
+  for(let i=0;i<E.events.length;i++){
+    if(i > 0 && E.events[i].t - E.events[i-1].t > seuil) np++;
+    E.events[i].passage = np;
+  }
+  E.nPassages = np + 1;
+}
+
+// Derniers gestes du passage en cours, jamais à cheval sur un silence. Si le passage
+// courant est trop court — on vient de reprendre après une pause — on remonte au dernier
+// passage exploitable plutôt que de n'afficher plus rien : l'utilisateur vient de jouer,
+// il attend un retour sur ce qu'il a joué.
+function fenetreCourante(){
+  const ev = E.events;
+  if(!ev.length) return {gestes:[], recul:0};
+  let fin = ev.length;
+  for(let saut=0; saut<8 && fin > 0; saut++){
+    const p = ev[fin-1].passage;
+    let i = fin;
+    while(i > 0 && ev[i-1].passage === p && fin - i < PARAM.fenetre) i--;
+    if(fin - i >= 8) return {gestes:ev.slice(i, fin), recul:saut};
+    fin = i;                       // passage trop court : on remonte au précédent
+  }
+  return {gestes:[], recul:0};
 }
 
 // Toute redéfinition de la référence temporelle — nouveau contexte audio, nouvelle
@@ -978,6 +1007,7 @@ function courbeAccroche(){
   const depart = Math.max(F, ev.length - 400);
   for(let i=depart;i<=ev.length;i++){
     const f = ev.slice(i-F, i);
+    if(f[0].passage !== f[F-1].passage) continue;   // fenêtre à cheval sur un silence
     const a = ajustement(f);
     c.push({t:f[F-1].t, R:a.H[0], Rb:a.H[a.m-1], m:a.m});
   }
@@ -1040,14 +1070,15 @@ const NOMS_SUBDIV = ['noires','croches','triolets','doubles'];
 function statistiques(){
   const nEv = E.events.length;
   if(nEv < 8) return null;
-  const F = Math.min(PARAM.fenetre, nEv);
-  const fen = E.events.slice(-F);
+  const fc = fenetreCourante();
+  const fen = fc.gestes;
+  if(fen.length < 8) return null;
   const dbs = E.events.map(e => e.db);
   const nDet = E.onsets.length;
   const larg = E.events.filter(e => e.n > 1).map(e => (e.tFin - e.t)*1000);
   larg.sort((a,b) => a-b);
   return {
-    nEv:nEv, nDet:nDet,
+    nEv:nEv, nDet:nDet, recul:fc.recul,
     fen:mesure(fen), glob:mesure(E.events),
     aj:ajustement(fen), ajGlob:ajustement(E.events),
     tempo:tempoJoue(),
@@ -1090,7 +1121,9 @@ function bilan(){
 
   const d = $('diagnostic');
   const msg = [];
-  const surFen = 'sur les ' + f.n + ' derniers gestes';
+  const surFen = st.recul > 0
+    ? 'sur les ' + f.n + ' derniers gestes du passage précédent'
+    : 'sur les ' + f.n + ' derniers gestes';
 
   // Le discriminateur ne doit parler que si l'autre subdivision explique VRAIMENT le
   // jeu : retenir la moins mauvaise harmonique parmi des valeurs toutes basses revient
@@ -1137,6 +1170,8 @@ function bilan(){
                      : 'tu anticipes, ou le calage est trop généreux')
       + ' — passe par «\u00a0Caler sur le jeu\u00a0».');
   }
+  if(E.nPassages > 1) msg.push('Série découpée en ' + E.nPassages + ' passages par des '
+    + 'silences ; aucune fenêtre n\u2019est mesurée à cheval sur une pause.');
   if(st.fusionnees > 0)
     msg.push(st.fusionnees + ' détection' + (st.fusionnees>1?'s':'') + ' fusionnée'
       + (st.fusionnees>1?'s':'') + ' dans un geste voisin'
@@ -1240,6 +1275,8 @@ function exporter(){
     reglages:{tempo:PARAM.tempo, subdivision:PARAM.subdiv, temps_par_mesure:PARAM.mesure,
               decalage_ms:PARAM.offset, sensibilite:PARAM.sens, ecart_min_ms:Math.round(PARAM.ioi*1000),
               fusion_ms:Math.round(PARAM.fusion*1000), fenetre_gestes:PARAM.fenetre,
+              clic:['muet','sur les temps','toutes subdivisions'][PARAM.clic],
+              passages:E.nPassages || 1,
               echantillonnage_hz:E.ctx ? E.ctx.sampleRate : null},
     bilan: st ? {
       gestes:st.nEv, detections:st.nDet,
@@ -1252,7 +1289,8 @@ function exporter(){
       ecart_dynamique_db:+st.dyn.toFixed(1)
     } : null,
     gestes:E.events.map(e=>({
-      temps_s:+e.t.toFixed(4), detections:e.n, etalement_ms:+((e.tFin-e.t)*1000).toFixed(1),
+      temps_s:+e.t.toFixed(4), passage:e.passage, detections:e.n,
+      etalement_ms:+((e.tFin-e.t)*1000).toFixed(1),
       case_grille:e.k, position_mesure:e.pos,
       ecart_ms:+(e.dev*1000).toFixed(1), intensite_db:+e.db.toFixed(1)
     })),
