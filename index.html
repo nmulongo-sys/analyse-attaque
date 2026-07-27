@@ -225,12 +225,15 @@ code{background:var(--creme2);padding:.05em .3em;border-radius:2px;font-size:.85
   <h2>Bilan</h2>
   <div class="chiffres">
     <div class="chiffre"><span class="k">Attaques</span><span class="v" id="nAtt">0</span></div>
+    <div class="chiffre"><span class="k">Accroche à la grille</span><span class="v" id="accroche">—</span><span class="u"> %</span></div>
+    <div class="chiffre"><span class="k">Tempo joué</span><span class="v" id="tempoJoue">—</span><span class="u"> bpm</span></div>
     <div class="chiffre"><span class="k">Écart moyen</span><span class="v" id="biais">—</span><span class="u"> ms</span></div>
     <div class="chiffre"><span class="k">Régularité (σ)</span><span class="v" id="jitter">—</span><span class="u"> ms</span></div>
     <div class="chiffre"><span class="k">Dans ±25 ms</span><span class="v" id="pctCible">—</span><span class="u"> %</span></div>
     <div class="chiffre"><span class="k">Écart dynamique</span><span class="v" id="dyn">—</span><span class="u"> dB</span></div>
   </div>
-  <p class="etat">L'écart moyen est un biais systématique — il se corrige au décalage de latence. La régularité (écart-type) est la vraie mesure de stabilité rythmique : elle ne se calibre pas.</p>
+  <p class="etat" id="diagnostic">En attente de mesures.</p>
+  <p class="etat">L'accroche mesure si le jeu est réellement synchronisé à la grille (longueur du vecteur résultant, test de Rayleigh). Tant qu'elle n'est pas significative, l'écart moyen et la régularité ne sont pas affichés : ils seraient du bruit présenté comme une mesure. L'écart moyen est un biais systématique, il se corrige au décalage de latence ; la régularité, elle, ne se calibre pas.</p>
   <div class="rangee" style="margin-top:.7rem">
     <button id="btnExport" disabled>Exporter les mesures (JSON)</button>
   </div>
@@ -463,6 +466,7 @@ const E = {
   odf:[], seuil:[],   // historique pour la courbe
   odfMax:0.02,
   niveau:0, crete:0,
+  fiable:false,
   maj:true,           // un graphique de mesure doit être redessiné
   timer:null
 };
@@ -533,14 +537,16 @@ async function demarrer(){
 
     E.actif = true;
     E.ancre = E.ctx.currentTime + 0.15;
+    const avait = E.onsets.length;
+    E.onsets = []; E.maj = true;    // nouveau contexte audio = nouvelle base de temps
     $('btnMicro').textContent = 'Arrêter le micro';
     $('btnMicro').classList.remove('primaire');
     $('btnMetro').disabled = false;
-    $('btnRaz').disabled = false;
     $('btnCaler').disabled = false;
-    $('btnExport').disabled = false;
-    etat('Micro actif — fréquence d\u2019échantillonnage ' + E.ctx.sampleRate + ' Hz, une trame toutes les '
-         + (256/E.ctx.sampleRate*1000).toFixed(1).replace('.',',') + ' ms.');
+    etat('Micro actif — ' + E.ctx.sampleRate + ' Hz, une trame toutes les '
+         + (256/E.ctx.sampleRate*1000).toFixed(1).replace('.',',') + ' ms.'
+         + (avait ? ' Les ' + avait + ' attaques de la session précédente ont été effacées : '
+                    + 'un nouveau contexte audio repart d\u2019une autre base de temps.' : ''));
   }catch(err){
     etat('Micro indisponible : ' + (err && err.message ? err.message : err), true);
   }
@@ -555,7 +561,7 @@ function arreter(){
   E.actif = false;
   $('btnMicro').textContent = 'Activer le micro';
   $('btnMicro').classList.add('primaire');
-  ['btnMetro','btnRaz','btnCaler','btnExport'].forEach(i => $(i).disabled = true);
+  ['btnMetro','btnCaler'].forEach(i => $(i).disabled = true);
   $('vuNiveau').style.width = '0%';
   etat('Micro arrêté. Les mesures restent affichées.');
 }
@@ -577,29 +583,42 @@ function recevoir(e){
 // ---------------------------------------------------------------- grille
 function pasGrille(){ return 60 / PARAM.tempo / PARAM.subdiv; }
 
+// Chaque attaque emporte la référence contre laquelle elle a été jouée (ancre, pas).
+// Sans cela, redémarrer le métronome recalculait les anciennes attaques contre une
+// ancre qui n'existait pas au moment où elles ont été jouées : leurs écarts
+// devenaient arbitraires et la statistique globale tendait vers le bruit uniforme.
+function placer(o){
+  const t = o.t + PARAM.offset/1000;
+  const parMes = PARAM.subdiv * PARAM.mesure;
+  const k = Math.round((t - o.ancre) / o.pas);
+  o.k = k;
+  o.dev = t - (o.ancre + k*o.pas);
+  o.pos = ((k % parMes) + parMes) % parMes;
+}
+
 function enregistrer(d){
-  const t = d.t + PARAM.offset/1000;
-  const pas = pasGrille();
-  const k = Math.round((t - E.ancre) / pas);
-  const dev = t - (E.ancre + k*pas);
-  const pos = ((k % (PARAM.subdiv*PARAM.mesure)) + PARAM.subdiv*PARAM.mesure) % (PARAM.subdiv*PARAM.mesure);
-  const db = 20 * Math.log10(Math.max(d.crete, 1e-6));
-  E.onsets.push({t:d.t, k:k, dev:dev, pos:pos, db:db, force:d.force});
+  const o = {t:d.t, ancre:E.ancre, pas:pasGrille(), force:d.force,
+             db:20 * Math.log10(Math.max(d.crete, 1e-6))};
+  placer(o);
+  E.onsets.push(o);
   if(E.onsets.length > 600) E.onsets.shift();
   E.maj = true;
 }
 
 function recalculer(){
-  const pas = pasGrille();
-  const parMes = PARAM.subdiv*PARAM.mesure;
-  for(const o of E.onsets){
-    const t = o.t + PARAM.offset/1000;
-    const k = Math.round((t - E.ancre) / pas);
-    o.k = k;
-    o.dev = t - (E.ancre + k*pas);
-    o.pos = ((k % parMes) + parMes) % parMes;
-  }
+  for(const o of E.onsets) placer(o);
   E.maj = true;
+}
+
+// Toute redéfinition de la référence temporelle — nouveau contexte audio, nouvelle
+// ancre, nouveau pas — rend les mesures antérieures incomparables. On repart à zéro
+// en le disant, plutôt que de mélanger deux référentiels.
+function nouvelleSerie(motif){
+  const n = E.onsets.length;
+  E.onsets = [];
+  E.maj = true;
+  if(n) etat('Série repartie — ' + motif + '. Les ' + n + ' attaques précédentes '
+             + 'portaient sur une autre référence : elles ne sont plus comparables.');
 }
 
 // ---------------------------------------------------------------- métronome
@@ -615,7 +634,7 @@ function basculerMetro(){
   E.ancre = E.ctx.currentTime + 0.25;
   E.k = 0;
   E.prochain = E.ancre;
-  recalculer();
+  nouvelleSerie('nouvelle ancre de métronome');
   $('btnMetro').classList.add('actif');
   $('btnMetro').textContent = 'Arrêter le métronome';
   E.timer = setInterval(ordonnancer, 25);
@@ -836,27 +855,123 @@ function dessinerProfil(){
   const nomme = (i) => (i % PARAM.subdiv === 0)
       ? 'le temps ' + (1 + i/PARAM.subdiv)
       : 'la subdivision ' + (i % PARAM.subdiv + 1) + ' du temps ' + (1 + Math.floor(i/PARAM.subdiv));
-  $('etatProfil').textContent = 'Position la plus appuyée : ' + nomme(iMax)
+  $('etatProfil').textContent = E.fiable
+    ? 'Position la plus appuyée : ' + nomme(iMax)
       + ' — amplitude d\u2019accentuation ' + ecart.toFixed(1).replace('.',',') + ' dB sur '
-      + E.onsets.length + ' attaques.';
+      + E.onsets.length + ' attaques.'
+    : 'Positions non fiables : sans accroche à la grille, chaque attaque est rangée dans '
+      + 'une case arbitraire. Ce profil ne veut rien dire tant que l\u2019accroche n\u2019est pas établie.';
+}
+
+// Les écarts à la grille sont des PHASES, pas des longueurs : ils sont bornés à
+// ±pas/2 et se referment sur eux-mêmes. La moyenne et l'écart-type linéaires y sont
+// trompeurs — un jeu sans aucun rapport avec la grille produit mécaniquement un
+// écart-type de pas/√12, qu'on peut prendre pour une mesure alors que c'est du bruit.
+// D'où la statistique circulaire et le test de Rayleigh.
+function statistiques(){
+  const n = E.onsets.length;
+  if(n < 8) return null;
+  let C = 0, S = 0;
+  for(const o of E.onsets){
+    const a = 2*Math.PI * o.dev / o.pas;
+    C += Math.cos(a); S += Math.sin(a);
+  }
+  C /= n; S /= n;
+  const R = Math.hypot(C, S);                      // accroche : 0 = aucune, 1 = parfaite
+  const z = n*R*R;                                 // statistique de Rayleigh
+  const pval = Math.exp(Math.sqrt(1 + 4*n + 4*n*n*(1 - R*R)) - (1 + 2*n));
+  const pas = E.onsets[n-1].pas;
+  const biais = Math.atan2(S, C) / (2*Math.PI) * pas * 1000;
+  const sigma = R > 1e-6 ? pas*1000/(2*Math.PI) * Math.sqrt(-2*Math.log(R)) : Infinity;
+  const dbs = E.onsets.map(o => o.db);
+  const dansCible = E.onsets.filter(o => Math.abs(o.dev) <= FEN).length;
+  return {n:n, R:R, z:z, pval:pval, biais:biais, sigma:sigma, pas:pas,
+          dansCible:100*dansCible/n,
+          dyn:Math.max.apply(null,dbs) - Math.min.apply(null,dbs),
+          fiable: pval < 0.001 && R > 0.25,
+          tempo: tempoJoue()};
+}
+
+// Pas réellement joué, par recherche du maximum d'accroche autour de l'intervalle
+// médian entre attaques. Indépendant de la grille : répond à « à quel tempo joue-t-il »,
+// pas à « respecte-t-il le mien ».
+function tempoJoue(){
+  const ts = E.onsets.map(o => o.t);
+  const iois = [];
+  for(let i=1;i<ts.length;i++){
+    const d = ts[i] - ts[i-1];
+    if(d > 0.08 && d < 2.5) iois.push(d);
+  }
+  if(iois.length < 6) return null;
+  iois.sort((a,b) => a-b);
+  const med = iois[iois.length >> 1];
+  let meilleur = null;
+  for(let i=0;i<=300;i++){
+    const p = med * (0.78 + 0.44*i/300);
+    let C = 0, S = 0;
+    for(const t of ts){ const a = 2*Math.PI*t/p; C += Math.cos(a); S += Math.sin(a); }
+    const R = Math.hypot(C, S)/ts.length;
+    if(!meilleur || R > meilleur.R) meilleur = {R:R, p:p};
+  }
+  return {pas:meilleur.p, R:meilleur.R, bpm:60/(meilleur.p*PARAM.subdiv)};
 }
 
 function bilan(){
   const n = E.onsets.length;
   $('nAtt').textContent = n;
-  if(n < 2){
-    ['biais','jitter','pctCible','dyn'].forEach(i => $(i).textContent = '—');
+  // ces deux actions ne dépendent pas du micro, seulement de ce qu'il y a à traiter
+  $('btnExport').disabled = n === 0;
+  $('btnRaz').disabled = n === 0;
+  const st = statistiques();
+  E.fiable = !!(st && st.fiable);
+  if(!st){
+    ['accroche','biais','jitter','pctCible','dyn','tempoJoue'].forEach(i => $(i).textContent = '—');
+    $('diagnostic').textContent = n ? 'Encore trop peu d\u2019attaques pour conclure (8 minimum).'
+                                    : 'En attente de mesures.';
+    $('diagnostic').className = 'etat';
     return;
   }
-  const devs = E.onsets.map(o=>o.dev*1000);
-  const moy = devs.reduce((a,b)=>a+b,0)/n;
-  const va = devs.reduce((a,b)=>a+(b-moy)*(b-moy),0)/n;
-  const dansCible = devs.filter(d=>Math.abs(d) <= FEN*1000).length;
-  const dbs = E.onsets.map(o=>o.db);
-  $('biais').textContent = (moy>0?'+':'') + moy.toFixed(1).replace('.',',');
-  $('jitter').textContent = Math.sqrt(va).toFixed(1).replace('.',',');
-  $('pctCible').textContent = Math.round(100*dansCible/n);
-  $('dyn').textContent = (Math.max.apply(null,dbs) - Math.min.apply(null,dbs)).toFixed(1).replace('.',',');
+  $('accroche').textContent = Math.round(100*st.R);
+  $('pctCible').textContent = Math.round(st.dansCible);
+  $('dyn').textContent = st.dyn.toFixed(1).replace('.',',');
+  $('tempoJoue').textContent = st.tempo ? Math.round(st.tempo.bpm) : '—';
+
+  if(st.fiable){
+    $('biais').textContent = (st.biais>0?'+':'') + st.biais.toFixed(1).replace('.',',');
+    $('jitter').textContent = st.sigma.toFixed(1).replace('.',',');
+  }else{
+    $('biais').textContent = '—';
+    $('jitter').textContent = '—';
+  }
+
+  const d = $('diagnostic');
+  const msg = [];
+  if(!st.fiable){
+    d.className = 'alerte';
+    msg.push('Aucune accroche significative à la grille (' + Math.round(100*st.R)
+      + ' %, p = ' + (st.pval < 0.001 ? st.pval.toExponential(1) : st.pval.toFixed(3))
+      + '). Les écarts sont répartis à peu près uniformément : l\u2019écart moyen et la '
+      + 'régularité ne veulent rien dire dans cet état, ils ne sont pas affichés.');
+    if(st.tempo){
+      const ecart = 100*Math.abs(st.tempo.bpm - PARAM.tempo)/PARAM.tempo;
+      if(ecart > 4) msg.push('Tu joues autour de ' + Math.round(st.tempo.bpm)
+        + ' bpm alors que la grille est à ' + PARAM.tempo + ' bpm — c\u2019est ce décalage '
+        + 'qui fait dériver les écarts jusqu\u2019à faire le tour du cadran.');
+      else msg.push('Le tempo joué correspond pourtant à la grille : vérifie que la série '
+        + 'n\u2019a pas commencé avant le métronome.');
+    }
+  }else{
+    d.className = 'etat';
+    const q = st.sigma < 15 ? 'très stable' : st.sigma < 30 ? 'stable'
+            : st.sigma < 50 ? 'irrégulier' : 'très irrégulier';
+    msg.push('Accroche à la grille ' + Math.round(100*st.R) + ' % — placement ' + q + '.');
+    if(Math.abs(st.biais) > 15) msg.push('Biais de ' + Math.round(st.biais) + ' ms : '
+      + (st.biais > 0 ? 'tu traînes, ou la latence n\u2019est pas calée' : 'tu anticipes, ou le calage est trop généreux')
+      + ' — passe par « Caler sur le jeu ».');
+  }
+  if(st.dyn > 30) msg.push('Écart dynamique de ' + st.dyn.toFixed(0) + ' dB : c\u2019est beaucoup '
+    + 'pour une guitare. Les attaques les plus faibles sont probablement de fausses détections — monte la sensibilité.');
+  d.textContent = msg.join(' ');
 }
 
 let tFlux = 0, tVu = 0;
@@ -868,7 +983,7 @@ function boucle(t){
   if(E.actif && t - tFlux > 33){ tFlux = t; dessinerFlux(); }
   if(E.maj){
     E.maj = false;
-    dessinerCible(); dessinerDyn(); dessinerProfil(); bilan();
+    bilan(); dessinerCible(); dessinerDyn(); dessinerProfil();
     if(!E.actif) dessinerFlux();
   }
   if(E.actif && t - tVu > 66){
@@ -935,10 +1050,14 @@ $('btnExport').addEventListener('click', exporter);
 $('tempo').addEventListener('change', e => {
   PARAM.tempo = Math.max(30, Math.min(240, parseInt(e.target.value,10) || 80));
   e.target.value = PARAM.tempo;
-  if(E.metro){ E.ancre = E.ctx.currentTime + 0.1; E.k = 0; E.prochain = E.ancre; }
-  recalculer();
+  if(E.ctx){ E.ancre = E.ctx.currentTime + 0.1; E.k = 0; E.prochain = E.ancre; }
+  nouvelleSerie('tempo modifié');
 });
-$('subdiv').addEventListener('change', e => { PARAM.subdiv = +e.target.value; recalculer(); });
+$('subdiv').addEventListener('change', e => {
+  PARAM.subdiv = +e.target.value;
+  if(E.ctx){ E.ancre = E.ctx.currentTime + 0.1; E.k = 0; E.prochain = E.ancre; }
+  nouvelleSerie('subdivision modifiée');
+});
 $('mesure').addEventListener('change', e => { PARAM.mesure = +e.target.value; recalculer(); });
 $('clic').addEventListener('change', e => { PARAM.clic = +e.target.value; });
 
