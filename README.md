@@ -5,7 +5,7 @@ micro du navigateur. Destiné à l'usage pédagogique : montrer à l'élève où
 réellement ses attaques par rapport à la grille, et comment il répartit ses accents.
 
 **En ligne** : https://nmulongo-sys.github.io/analyse-attaque/
-**Statut** : v1.4 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
+**Statut** : v1.5 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
 
 ## Utilisation
 
@@ -176,6 +176,19 @@ les autres temps, 820 Hz sur les subdivisions.
   calibre pas.
 - **Dans ±25 ms**, **écart dynamique** (amplitude max − min en dB).
 
+### Passages — la fenêtre n'enjambe jamais un silence
+
+Un silence supérieur à `max(4 × pas, 3 s)` ouvre un nouveau **passage**. Une fenêtre
+d'analyse à cheval sur une pause compare des gestes séparés de plusieurs secondes et fait
+chuter l'accroche sans que le jeu ait changé : sur une prise réelle, 93 % avant la pause,
+72 % affichés après. Les fenêtres à cheval sont exclues de la courbe, et les chiffres
+portent sur le passage en cours.
+
+Si le passage courant compte moins de huit gestes — on vient de reprendre après une
+pause — l'outil remonte au dernier passage exploitable et le signale, plutôt que de
+n'afficher plus rien : l'utilisateur vient de jouer, il attend un retour sur ce qu'il a
+joué.
+
 ### Fenêtre glissante — pourquoi il n'y a pas de chiffre global
 
 Une séance d'entraînement n'est pas homogène. Sur la session de référence, l'accroche
@@ -270,6 +283,32 @@ instrumenté sous Node :
 À confirmer sur guitare et micro réels : le banc est synthétique.
 
 ## Journal de développement
+
+### 2026-07-27 — v1.5, découpage en passages
+Troisième export réel (90 bpm, subdivision croches, 52 gestes pour 82 détections). Prise
+de loin la meilleure : période produite 334 ms — le pas réglé au millième —, accroche
+85 %, dispersion 30 ms, biais −4 ms, 80 % des gestes dans ±35 ms.
+
+- **Défaut trouvé dans les données** : la prise contenait un silence de 17 s, et la
+  fenêtre glissante l'enjambait. L'outil affichait 78 % là où le jeu valait 85 %, et 93 %
+  sur son meilleur passage. Un silence supérieur à `max(4 × pas, 3 s)` ouvre désormais un
+  nouveau passage ; aucune fenêtre n'est mesurée à cheval sur une pause, et les fenêtres
+  concernées sont exclues de la courbe de progression.
+- Repli sur le dernier passage exploitable quand le passage courant compte moins de huit
+  gestes, avec mention explicite dans le diagnostic.
+- Le réglage du clic (muet / sur les temps / toutes subdivisions) et le nombre de passages
+  figurent maintenant dans l'export : sans eux, impossible de savoir *a posteriori* si une
+  prise relevait ou non de la condition « bénéfice de subdivision ».
+- Chaque geste exporté porte son numéro de passage.
+- Test `vsilence` ajouté : rejeu de la prise réelle, vérification que l'accroche remonte
+  au-dessus de 80 % et que 27 fenêtres à cheval sont bien écartées.
+
+*Note d'analyse.* Les deux premières séances suggéraient une dispersion constante en
+proportion de l'intervalle (14,7 % puis 12,4 %) — hypothèse de type loi de Weber. La
+troisième donne 9,0 % et la contredit. Elle diffère cependant sur deux axes à la fois :
+intervalle plus court **et** flux continu d'un geste par pas de grille, ce dernier
+constituant en soi la condition de « bénéfice de subdivision » décrite par Repp (2003).
+Les données disponibles ne permettent pas de séparer les deux causes.
 
 ### 2026-07-27 — v1.4, estimation du tempo par étages
 Deuxième export réel (grille à 40 bpm, 42 gestes pour 51 détections, 44 s). La
