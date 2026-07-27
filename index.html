@@ -186,6 +186,27 @@ code{background:var(--creme2);padding:.05em .3em;border-radius:2px;font-size:.85
 </section>
 
 <section>
+  <h2>Progression <span class="note">accroche glissante</span></h2>
+  <canvas id="cvProgres" height="180" data-h="180"></canvas>
+  <div class="legende">
+    <span><i style="background:var(--sepia)"></i>accroche sur la grille réglée</span>
+    <span><i style="background:rgba(184,134,11,.55)"></i>meilleur ajustement possible</span>
+    <span>point or : une autre subdivision explique mieux ce passage</span>
+  </div>
+  <div class="rangee" style="margin-top:.7rem">
+    <div class="champ">
+      <label for="fenetre">Fenêtre d'analyse</label>
+      <select id="fenetre">
+        <option value="12">12 gestes</option>
+        <option value="24" selected>24 gestes</option>
+        <option value="48">48 gestes</option>
+      </select>
+    </div>
+  </div>
+  <p class="etat">Une séance n'est pas homogène : une statistique globale sur deux minutes ne décrit aucun instant de jeu. La fenêtre glissante répond à « où en es-tu maintenant », la courbe montre ce qui se passe entre les deux.</p>
+</section>
+
+<section>
   <h2>Attaques détectées <span class="note">flux spectral</span></h2>
   <canvas id="cvFlux" height="150" data-h="150"></canvas>
   <div class="rangee" style="margin-top:.7rem">
@@ -197,11 +218,16 @@ code{background:var(--creme2);padding:.05em .3em;border-radius:2px;font-size:.85
       <label for="ioi">Écart minimum entre deux attaques <span class="val" id="ioiVal">55 ms</span></label>
       <input type="range" id="ioi" min="20" max="200" value="55" step="5">
     </div>
+    <div class="curseur">
+      <label for="fusion">Fusion en un seul geste <span class="val" id="fusionVal">120 ms</span></label>
+      <input type="range" id="fusion" min="0" max="250" value="120" step="10">
+    </div>
   </div>
   <div class="legende">
     <span>courbe pleine : flux spectral</span>
     <span>trait clair : seuil adaptatif</span>
-    <span>trait vertical : attaque retenue</span>
+    <span>trait haut : geste retenu</span>
+    <span>trait bas pâle : détection fusionnée dans le geste précédent</span>
   </div>
   <p class="etat">Baisse la sensibilité si des attaques sont manquées, monte-la si la résonance ou le bruit déclenche de fausses détections. Sur un jeu très lié (hammer-on, coulés), descends aussi l'écart minimum.</p>
 </section>
@@ -224,7 +250,8 @@ code{background:var(--creme2);padding:.05em .3em;border-radius:2px;font-size:.85
 <section>
   <h2>Bilan</h2>
   <div class="chiffres">
-    <div class="chiffre"><span class="k">Attaques</span><span class="v" id="nAtt">0</span></div>
+    <div class="chiffre"><span class="k">Gestes</span><span class="v" id="nAtt">0</span></div>
+    <div class="chiffre"><span class="k">Détections brutes</span><span class="v" id="nDet">0</span></div>
     <div class="chiffre"><span class="k">Accroche à la grille</span><span class="v" id="accroche">—</span><span class="u"> %</span></div>
     <div class="chiffre"><span class="k">Tempo joué</span><span class="v" id="tempoJoue">—</span><span class="u"> bpm</span></div>
     <div class="chiffre"><span class="k">Écart moyen</span><span class="v" id="biais">—</span><span class="u"> ms</span></div>
@@ -233,7 +260,7 @@ code{background:var(--creme2);padding:.05em .3em;border-radius:2px;font-size:.85
     <div class="chiffre"><span class="k">Écart dynamique</span><span class="v" id="dyn">—</span><span class="u"> dB</span></div>
   </div>
   <p class="etat" id="diagnostic">En attente de mesures.</p>
-  <p class="etat">L'accroche mesure si le jeu est réellement synchronisé à la grille (longueur du vecteur résultant, test de Rayleigh). Tant qu'elle n'est pas significative, l'écart moyen et la régularité ne sont pas affichés : ils seraient du bruit présenté comme une mesure. L'écart moyen est un biais systématique, il se corrige au décalage de latence ; la régularité, elle, ne se calibre pas.</p>
+  <p class="etat">Un accord plaqué produit plusieurs détections : les cordes du balayage, et surtout le redéclenchement sur la résonance. Les statistiques portent donc sur les <em>gestes</em>, pas sur les détections brutes. L'accroche mesure si le jeu est réellement synchronisé à la grille (longueur du vecteur résultant, test de Rayleigh). Tant qu'elle n'est pas significative, l'écart moyen et la régularité ne sont pas affichés : ils seraient du bruit présenté comme une mesure. L'écart moyen est un biais systématique, il se corrige au décalage de latence ; la régularité, elle, ne se calibre pas.</p>
   <div class="rangee" style="margin-top:.7rem">
     <button id="btnExport" disabled>Exporter les mesures (JSON)</button>
   </div>
@@ -462,7 +489,9 @@ const E = {
   actif:false, metro:false,
   ancre:0,            // instant (ctx.currentTime) du temps 1 de la grille
   prochain:0, k:0,    // ordonnancement du clic
-  onsets:[],          // {t, dev, pos, db, force}
+  onsets:[],          // détections brutes du worklet
+  events:[],          // gestes musicaux : détections regroupées
+  courbe:[],          // accroche glissante {t, R, Rb, m}
   odf:[], seuil:[],   // historique pour la courbe
   odfMax:0.02,
   niveau:0, crete:0,
@@ -470,7 +499,8 @@ const E = {
   maj:true,           // un graphique de mesure doit être redessiné
   timer:null
 };
-const PARAM = {tempo:80, subdiv:2, mesure:4, clic:1, offset:0, sens:2.5, ioi:0.055};
+const PARAM = {tempo:80, subdiv:2, mesure:4, clic:1, offset:0, sens:2.5, ioi:0.055,
+               fusion:0.12, fenetre:24};
 const FEN = 0.025;                     // fenêtre « dans la cible » : ±25 ms
 const ODF_MAX = 760;                   // ~4 s d'historique de courbe
 const $ = id => document.getElementById(id);
@@ -601,21 +631,45 @@ function enregistrer(d){
              db:20 * Math.log10(Math.max(d.crete, 1e-6))};
   placer(o);
   E.onsets.push(o);
-  if(E.onsets.length > 600) E.onsets.shift();
+  if(E.onsets.length > 900) E.onsets.shift();
+  regrouper();
   E.maj = true;
 }
 
 function recalculer(){
   for(const o of E.onsets) placer(o);
+  regrouper();
   E.maj = true;
+}
+
+// Un accord plaqué produit plusieurs détections : le balayage des cordes, mais surtout
+// le redéclenchement sur la résonance du corps dès la fin du temps réfractaire. Sur une
+// session réelle, 293 détections correspondaient à 162 gestes. La statistique doit porter
+// sur les gestes ; les détections restent visibles sur le bandeau de flux.
+function regrouper(){
+  E.events = [];
+  let cur = null;
+  for(const o of E.onsets){
+    if(!cur || o.t - cur.tFin > PARAM.fusion){
+      cur = {t:o.t, tFin:o.t, ancre:o.ancre, pas:o.pas, db:o.db, n:1};
+      E.events.push(cur);
+      o.chef = true;
+    }else{
+      cur.tFin = o.t;
+      if(o.db > cur.db) cur.db = o.db;
+      cur.n++;
+      o.chef = false;
+    }
+  }
+  for(const e of E.events) placer(e);
 }
 
 // Toute redéfinition de la référence temporelle — nouveau contexte audio, nouvelle
 // ancre, nouveau pas — rend les mesures antérieures incomparables. On repart à zéro
 // en le disant, plutôt que de mélanger deux référentiels.
 function nouvelleSerie(motif){
-  const n = E.onsets.length;
-  E.onsets = [];
+  const n = E.events.length;
+  E.onsets = []; E.events = []; E.courbe = [];
   E.maj = true;
   if(n) etat('Série repartie — ' + motif + '. Les ' + n + ' attaques précédentes '
              + 'portaient sur une autre référence : elles ne sont plus comparables.');
@@ -701,7 +755,7 @@ function dessinerCible(){
   c.textAlign = 'center';c.fillText('ms', xc(0), 14);
 
   // points : les 48 dernières attaques, les plus récentes en bas
-  const vus = E.onsets.slice(-48);
+  const vus = E.events.slice(-48);
   if(vus.length === 0){
     c.fillStyle = COUL.encre2; c.font = '12px "Work Sans",sans-serif';
     c.fillText('Joue quelques notes pour voir apparaître le placement.', L/2, (y0+y1)/2);
@@ -770,8 +824,13 @@ function dessinerFlux(){
     for(const o of E.onsets){
       if(o.t < tDeb) continue;
       const px = L * (o.t - tDeb) / (ODF_MAX*dt);
-      c.strokeStyle = couleurEcart(o.dev); c.lineWidth = 1.4;
-      c.beginPath(); c.moveTo(px, 4); c.lineTo(px, H-6); c.stroke();
+      if(o.chef === false){            // détection absorbée dans le geste précédent
+        c.strokeStyle = 'rgba(139,111,78,.35)'; c.lineWidth = 1;
+        c.beginPath(); c.moveTo(px, H-26); c.lineTo(px, H-6); c.stroke();
+      }else{
+        c.strokeStyle = couleurEcart(o.dev); c.lineWidth = 1.4;
+        c.beginPath(); c.moveTo(px, 4); c.lineTo(px, H-6); c.stroke();
+      }
     }
   }
   E.odfMax *= 0.9995;   // décroissance lente de l'échelle
@@ -780,7 +839,7 @@ function dessinerFlux(){
 function dessinerDyn(){
   const cv = $('cvDyn'); const {c,L,H} = prepare(cv);
   c.fillStyle = COUL.fond; c.fillRect(0,0,L,H);
-  const vus = E.onsets.slice(-64);
+  const vus = E.events.slice(-64);
   if(vus.length === 0){
     c.fillStyle = COUL.encre2; c.font='12px "Work Sans",sans-serif'; c.textAlign='center';
     c.fillText('En attente de mesures.', L/2, H/2); return;
@@ -813,7 +872,7 @@ function dessinerProfil(){
   const n = PARAM.subdiv*PARAM.mesure;
   const somme = new Array(n).fill(0), cpt = new Array(n).fill(0);
   const devS = new Array(n).fill(0);
-  for(const o of E.onsets){ somme[o.pos] += o.db; devS[o.pos] += o.dev; cpt[o.pos]++; }
+  for(const o of E.events){ somme[o.pos] += o.db; devS[o.pos] += o.dev; cpt[o.pos]++; }
   const bas = H-30, haut = 14;
   const dispo = cpt.some(v=>v>0);
   if(!dispo){
@@ -858,49 +917,78 @@ function dessinerProfil(){
   $('etatProfil').textContent = E.fiable
     ? 'Position la plus appuyée : ' + nomme(iMax)
       + ' — amplitude d\u2019accentuation ' + ecart.toFixed(1).replace('.',',') + ' dB sur '
-      + E.onsets.length + ' attaques.'
+      + E.events.length + ' gestes.'
     : 'Positions non fiables : sans accroche à la grille, chaque attaque est rangée dans '
       + 'une case arbitraire. Ce profil ne veut rien dire tant que l\u2019accroche n\u2019est pas établie.';
 }
 
 // Les écarts à la grille sont des PHASES, pas des longueurs : ils sont bornés à
-// ±pas/2 et se referment sur eux-mêmes. La moyenne et l'écart-type linéaires y sont
-// trompeurs — un jeu sans aucun rapport avec la grille produit mécaniquement un
-// écart-type de pas/√12, qu'on peut prendre pour une mesure alors que c'est du bruit.
-// D'où la statistique circulaire et le test de Rayleigh.
-function statistiques(){
-  const n = E.onsets.length;
-  if(n < 8) return null;
+// ±pas/2 et se referment sur eux-mêmes. Un jeu sans rapport avec la grille produit
+// mécaniquement un écart-type de pas/√12 — qu'on prendrait pour une mesure de
+// régularité alors que c'est la signature du bruit uniforme. D'où la statistique
+// circulaire et le test de Rayleigh.
+function harmoniques(evts){
+  const H = [0,0,0,0];
+  for(let m=1;m<=4;m++){
+    let C = 0, S = 0;
+    for(const e of evts){
+      const a = 2*Math.PI * m * e.dev / e.pas;
+      C += Math.cos(a); S += Math.sin(a);
+    }
+    H[m-1] = Math.hypot(C/evts.length, S/evts.length);
+  }
+  return H;
+}
+
+// R mesuré à pas/m est exactement la m-ième harmonique de la distribution de phase.
+// Une exécution en croches sur une grille de noires donne R1 ≈ 0 et R2 élevé : c'est
+// ce qui distingue « joue autre chose que la subdivision réglée » de « joue mal ».
+function ajustement(evts){
+  const H = harmoniques(evts);
+  let m = 0;
+  for(let k=1;k<4;k++) if(H[k] > H[m]) m = k;
+  return {H:H, m:m+1};
+}
+
+function mesure(evts){
+  const n = evts.length;
   let C = 0, S = 0;
-  for(const o of E.onsets){
-    const a = 2*Math.PI * o.dev / o.pas;
+  for(const e of evts){
+    const a = 2*Math.PI * e.dev / e.pas;
     C += Math.cos(a); S += Math.sin(a);
   }
   C /= n; S /= n;
-  const R = Math.hypot(C, S);                      // accroche : 0 = aucune, 1 = parfaite
-  const z = n*R*R;                                 // statistique de Rayleigh
+  const R = Math.hypot(C, S);
   const pval = Math.exp(Math.sqrt(1 + 4*n + 4*n*n*(1 - R*R)) - (1 + 2*n));
-  const pas = E.onsets[n-1].pas;
+  const pas = evts[n-1].pas;
   const biais = Math.atan2(S, C) / (2*Math.PI) * pas * 1000;
   const sigma = R > 1e-6 ? pas*1000/(2*Math.PI) * Math.sqrt(-2*Math.log(R)) : Infinity;
-  const dbs = E.onsets.map(o => o.db);
-  const dansCible = E.onsets.filter(o => Math.abs(o.dev) <= FEN).length;
-  return {n:n, R:R, z:z, pval:pval, biais:biais, sigma:sigma, pas:pas,
-          dansCible:100*dansCible/n,
-          dyn:Math.max.apply(null,dbs) - Math.min.apply(null,dbs),
-          fiable: pval < 0.001 && R > 0.25,
-          tempo: tempoJoue()};
+  const cible = 100 * evts.filter(e => Math.abs(e.dev*1000 - biais) <= FEN*1000).length / n;
+  return {n:n, R:R, pval:pval, biais:biais, sigma:sigma, cible:cible,
+          fiable: pval < 0.001 && R > 0.25};
 }
 
-// Pas réellement joué, par recherche du maximum d'accroche autour de l'intervalle
-// médian entre attaques. Indépendant de la grille : répond à « à quel tempo joue-t-il »,
-// pas à « respecte-t-il le mien ».
+// Une session d'entraînement n'est pas homogène : une statistique globale sur deux
+// minutes décrit rarement un instant de jeu. La fenêtre glissante dit « où en es-tu
+// maintenant », la courbe montre la progression.
+function courbeAccroche(){
+  const F = PARAM.fenetre, ev = E.events;
+  const c = [];
+  const depart = Math.max(F, ev.length - 400);
+  for(let i=depart;i<=ev.length;i++){
+    const f = ev.slice(i-F, i);
+    const a = ajustement(f);
+    c.push({t:f[F-1].t, R:a.H[0], Rb:a.H[a.m-1], m:a.m});
+  }
+  return c;
+}
+
 function tempoJoue(){
-  const ts = E.onsets.map(o => o.t);
+  const ts = E.events.map(e => e.t);
   const iois = [];
   for(let i=1;i<ts.length;i++){
     const d = ts[i] - ts[i-1];
-    if(d > 0.08 && d < 2.5) iois.push(d);
+    if(d > 0.12 && d < 2.5) iois.push(d);
   }
   if(iois.length < 6) return null;
   iois.sort((a,b) => a-b);
@@ -916,29 +1004,54 @@ function tempoJoue(){
   return {pas:meilleur.p, R:meilleur.R, bpm:60/(meilleur.p*PARAM.subdiv)};
 }
 
+const NOMS_SUBDIV = ['noires','croches','triolets','doubles'];
+
+function statistiques(){
+  const nEv = E.events.length;
+  if(nEv < 8) return null;
+  const F = Math.min(PARAM.fenetre, nEv);
+  const fen = E.events.slice(-F);
+  const dbs = E.events.map(e => e.db);
+  const nDet = E.onsets.length;
+  const larg = E.events.filter(e => e.n > 1).map(e => (e.tFin - e.t)*1000);
+  larg.sort((a,b) => a-b);
+  return {
+    nEv:nEv, nDet:nDet,
+    fen:mesure(fen), glob:mesure(E.events),
+    aj:ajustement(fen), ajGlob:ajustement(E.events),
+    tempo:tempoJoue(),
+    dyn:Math.max.apply(null,dbs) - Math.min.apply(null,dbs),
+    largeur: larg.length ? larg[larg.length >> 1] : null,
+    fusionnees: nDet - nEv
+  };
+}
+
 function bilan(){
-  const n = E.onsets.length;
-  $('nAtt').textContent = n;
-  // ces deux actions ne dépendent pas du micro, seulement de ce qu'il y a à traiter
-  $('btnExport').disabled = n === 0;
-  $('btnRaz').disabled = n === 0;
+  $('nDet').textContent = E.onsets.length;
   const st = statistiques();
-  E.fiable = !!(st && st.fiable);
+  E.fiable = !!(st && st.fen.fiable && st.aj.m === 1);
+  $('btnExport').disabled = E.events.length === 0;
+  $('btnRaz').disabled = E.events.length === 0;
+  $('nAtt').textContent = E.events.length;
+
   if(!st){
     ['accroche','biais','jitter','pctCible','dyn','tempoJoue'].forEach(i => $(i).textContent = '—');
-    $('diagnostic').textContent = n ? 'Encore trop peu d\u2019attaques pour conclure (8 minimum).'
-                                    : 'En attente de mesures.';
+    $('diagnostic').textContent = E.events.length
+      ? 'Encore trop peu de gestes pour conclure (8 minimum).' : 'En attente de mesures.';
     $('diagnostic').className = 'etat';
+    E.courbe = [];
     return;
   }
-  $('accroche').textContent = Math.round(100*st.R);
-  $('pctCible').textContent = Math.round(st.dansCible);
+
+  E.courbe = courbeAccroche();
+  const f = st.fen, aj = st.aj;
+  $('accroche').textContent = Math.round(100*f.R);
+  $('pctCible').textContent = Math.round(f.cible);
   $('dyn').textContent = st.dyn.toFixed(1).replace('.',',');
   $('tempoJoue').textContent = st.tempo ? Math.round(st.tempo.bpm) : '—';
-
-  if(st.fiable){
-    $('biais').textContent = (st.biais>0?'+':'') + st.biais.toFixed(1).replace('.',',');
-    $('jitter').textContent = st.sigma.toFixed(1).replace('.',',');
+  if(f.fiable && aj.m === 1){
+    $('biais').textContent = (f.biais>0?'+':'') + f.biais.toFixed(1).replace('.',',');
+    $('jitter').textContent = f.sigma.toFixed(1).replace('.',',');
   }else{
     $('biais').textContent = '—';
     $('jitter').textContent = '—';
@@ -946,32 +1059,98 @@ function bilan(){
 
   const d = $('diagnostic');
   const msg = [];
-  if(!st.fiable){
+  const surFen = 'sur les ' + f.n + ' derniers gestes';
+
+  if(aj.m > 1 && aj.H[aj.m-1] > f.R + 0.1){
     d.className = 'alerte';
-    msg.push('Aucune accroche significative à la grille (' + Math.round(100*st.R)
-      + ' %, p = ' + (st.pval < 0.001 ? st.pval.toExponential(1) : st.pval.toFixed(3))
-      + '). Les écarts sont répartis à peu près uniformément : l\u2019écart moyen et la '
-      + 'régularité ne veulent rien dire dans cet état, ils ne sont pas affichés.');
+    msg.push('Tu joues en ' + NOMS_SUBDIV[aj.m-1] + ' ' + surFen
+      + ' : l\u2019accroche passe de ' + Math.round(100*f.R) + ' % sur la grille réglée à '
+      + Math.round(100*aj.H[aj.m-1]) + ' % si on compte ' + aj.m + ' fois plus de subdivisions. '
+      + 'Ton placement est bon — c\u2019est la grille qui ne correspond pas.'
+      + (PARAM.subdiv*aj.m <= 4
+         ? ' Passe la subdivision sur «\u00a0' + NOMS_SUBDIV[PARAM.subdiv*aj.m - 1] + '\u00a0».'
+         : ' Choisis une subdivision plus fine.'));
+  }else if(!f.fiable){
+    d.className = 'alerte';
+    msg.push('Aucune accroche significative à la grille ' + surFen + ' ('
+      + Math.round(100*f.R) + ' %, p = '
+      + (f.pval < 0.001 ? f.pval.toExponential(1) : f.pval.toFixed(3))
+      + '). Écart moyen et régularité ne sont pas affichés : ils seraient du bruit.');
     if(st.tempo){
-      const ecart = 100*Math.abs(st.tempo.bpm - PARAM.tempo)/PARAM.tempo;
-      if(ecart > 4) msg.push('Tu joues autour de ' + Math.round(st.tempo.bpm)
-        + ' bpm alors que la grille est à ' + PARAM.tempo + ' bpm — c\u2019est ce décalage '
-        + 'qui fait dériver les écarts jusqu\u2019à faire le tour du cadran.');
-      else msg.push('Le tempo joué correspond pourtant à la grille : vérifie que la série '
-        + 'n\u2019a pas commencé avant le métronome.');
+      const ec = 100*Math.abs(st.tempo.bpm - PARAM.tempo)/PARAM.tempo;
+      if(ec > 4) msg.push('Tu joues autour de ' + Math.round(st.tempo.bpm)
+        + ' bpm, la grille est à ' + PARAM.tempo + ' bpm.');
     }
   }else{
     d.className = 'etat';
-    const q = st.sigma < 15 ? 'très stable' : st.sigma < 30 ? 'stable'
-            : st.sigma < 50 ? 'irrégulier' : 'très irrégulier';
-    msg.push('Accroche à la grille ' + Math.round(100*st.R) + ' % — placement ' + q + '.');
-    if(Math.abs(st.biais) > 15) msg.push('Biais de ' + Math.round(st.biais) + ' ms : '
-      + (st.biais > 0 ? 'tu traînes, ou la latence n\u2019est pas calée' : 'tu anticipes, ou le calage est trop généreux')
-      + ' — passe par « Caler sur le jeu ».');
+    const q = f.sigma < 15 ? 'très stable' : f.sigma < 30 ? 'stable'
+            : f.sigma < 50 ? 'irrégulier' : 'très irrégulier';
+    // l'accroche dit s'il y a une relation avec la grille, la dispersion dit si elle est
+    // musicalement bonne : afficher les deux ensemble évite le verdict contradictoire
+    msg.push('Accroche ' + Math.round(100*f.R) + ' % ' + surFen + ', dispersion '
+      + Math.round(f.sigma) + ' ms autour du temps — placement ' + q + '.');
+    const dR = Math.round(100*(f.R - st.glob.R));
+    if(st.glob.n > 2*f.n && Math.abs(dR) >= 8)
+      msg.push(dR > 0 ? 'Tu progresses : ' + dR + ' points au-dessus de ta moyenne de session.'
+                      : 'Tu perds ' + (-dR) + ' points par rapport à ta moyenne de session.');
+    if(Math.abs(f.biais) > 15) msg.push('Biais de ' + Math.round(f.biais) + ' ms : '
+      + (f.biais > 0 ? 'tu traînes, ou la latence n\u2019est pas calée'
+                     : 'tu anticipes, ou le calage est trop généreux')
+      + ' — passe par «\u00a0Caler sur le jeu\u00a0».');
   }
-  if(st.dyn > 30) msg.push('Écart dynamique de ' + st.dyn.toFixed(0) + ' dB : c\u2019est beaucoup '
-    + 'pour une guitare. Les attaques les plus faibles sont probablement de fausses détections — monte la sensibilité.');
+  if(st.fusionnees > 0)
+    msg.push(st.fusionnees + ' détection' + (st.fusionnees>1?'s':'') + ' fusionnée'
+      + (st.fusionnees>1?'s':'') + ' dans un geste voisin'
+      + (st.largeur !== null ? ' (étalement médian ' + Math.round(st.largeur) + ' ms)' : '') + '.');
+  if(st.dyn > 30) msg.push('Écart dynamique de ' + st.dyn.toFixed(0)
+    + ' dB : beaucoup pour une guitare, les gestes les plus faibles sont probablement de fausses détections.');
   d.textContent = msg.join(' ');
+}
+
+function dessinerProgres(){
+  const cv = $('cvProgres'); const {c,L,H} = prepare(cv);
+  c.fillStyle = COUL.fond; c.fillRect(0,0,L,H);
+  const cb = E.courbe;
+  const mg = 26, bas = H-20, haut = 12;
+  c.strokeStyle = COUL.trait; c.lineWidth = 1;
+  c.fillStyle = COUL.encre2; c.font = '10px "Work Sans",sans-serif'; c.textAlign = 'right';
+  for(let r=0;r<=100;r+=25){
+    const y = bas - (bas-haut)*r/100;
+    c.beginPath(); c.moveTo(mg, y); c.lineTo(L-4, y); c.stroke();
+    c.fillText(r+'%', mg-4, y+3);
+  }
+  if(cb.length < 2){
+    c.textAlign = 'center'; c.fillStyle = COUL.encre2; c.font = '12px "Work Sans",sans-serif';
+    c.fillText('Il faut au moins ' + (PARAM.fenetre+1) + ' gestes pour tracer la progression.', L/2, H/2);
+    return;
+  }
+  const t0 = cb[0].t, t1 = cb[cb.length-1].t;
+  const x = t => mg + (L-mg-6) * (t1 > t0 ? (t-t0)/(t1-t0) : 0.5);
+  const y = r => bas - (bas-haut)*Math.max(0, Math.min(1, r));
+
+  // meilleur ajustement possible, en pointillé : le plafond atteignable
+  c.beginPath();
+  cb.forEach((p,i) => { const px=x(p.t), py=y(p.Rb); i?c.lineTo(px,py):c.moveTo(px,py); });
+  c.strokeStyle = 'rgba(184,134,11,.55)'; c.lineWidth = 1; c.setLineDash([3,3]);
+  c.stroke(); c.setLineDash([]);
+
+  // accroche sur la grille réglée
+  c.beginPath();
+  cb.forEach((p,i) => { const px=x(p.t), py=y(p.R); i?c.lineTo(px,py):c.moveTo(px,py); });
+  c.strokeStyle = COUL.sepia; c.lineWidth = 1.8; c.stroke();
+
+  // passages où une autre subdivision explique mieux le jeu
+  for(const p of cb){
+    if(p.m === 1) continue;
+    c.fillStyle = 'rgba(184,134,11,.85)';
+    c.beginPath(); c.arc(x(p.t), y(p.Rb), 2.2, 0, 6.2832); c.fill();
+  }
+  const der = cb[cb.length-1];
+  c.fillStyle = der.m === 1 ? COUL.cible : COUL.or;
+  c.beginPath(); c.arc(x(der.t), y(der.R), 4, 0, 6.2832); c.fill();
+
+  c.fillStyle = COUL.encre2; c.font = '10px "Work Sans",sans-serif'; c.textAlign = 'left';
+  c.fillText(Math.round(t1-t0) + ' s de jeu, fenêtre de ' + PARAM.fenetre + ' gestes', mg+2, haut-2);
 }
 
 let tFlux = 0, tVu = 0;
@@ -983,7 +1162,7 @@ function boucle(t){
   if(E.actif && t - tFlux > 33){ tFlux = t; dessinerFlux(); }
   if(E.maj){
     E.maj = false;
-    bilan(); dessinerCible(); dessinerDyn(); dessinerProfil();
+    bilan(); dessinerCible(); dessinerProgres(); dessinerDyn(); dessinerProfil();
     if(!E.actif) dessinerFlux();
   }
   if(E.actif && t - tVu > 66){
@@ -1002,7 +1181,7 @@ function etat(txt, err){
 }
 
 function caler(){
-  const rec = E.onsets.slice(-24);
+  const rec = E.events.slice(-PARAM.fenetre);
   if(rec.length < 4){ etat('Il faut au moins quatre attaques récentes pour caler.', true); return; }
   const devs = rec.map(o=>o.dev).sort((a,b)=>a-b);
   const med = devs[Math.floor(devs.length/2)];
@@ -1015,15 +1194,31 @@ function caler(){
 }
 
 function exporter(){
+  const st = statistiques();
   const donnees = {
-    outil:'analyse-attaque', version:1,
+    outil:'analyse-attaque', version:3,
     date:new Date().toISOString(),
     reglages:{tempo:PARAM.tempo, subdivision:PARAM.subdiv, temps_par_mesure:PARAM.mesure,
               decalage_ms:PARAM.offset, sensibilite:PARAM.sens, ecart_min_ms:Math.round(PARAM.ioi*1000),
+              fusion_ms:Math.round(PARAM.fusion*1000), fenetre_gestes:PARAM.fenetre,
               echantillonnage_hz:E.ctx ? E.ctx.sampleRate : null},
-    attaques:E.onsets.map(o=>({
-      temps_s:+o.t.toFixed(4), case_grille:o.k, position_mesure:o.pos,
-      ecart_ms:+(o.dev*1000).toFixed(1), intensite_db:+o.db.toFixed(1)
+    bilan: st ? {
+      gestes:st.nEv, detections:st.nDet,
+      fenetre:{accroche:+st.fen.R.toFixed(3), p:+st.fen.pval.toExponential(2),
+               biais_ms:+st.fen.biais.toFixed(1), sigma_ms:+st.fen.sigma.toFixed(1),
+               subdivision_ajustee:st.aj.m, harmoniques:st.aj.H.map(v=>+v.toFixed(3))},
+      session:{accroche:+st.glob.R.toFixed(3), sigma_ms:+st.glob.sigma.toFixed(1),
+               subdivision_ajustee:st.ajGlob.m},
+      tempo_joue_bpm: st.tempo ? +st.tempo.bpm.toFixed(1) : null,
+      ecart_dynamique_db:+st.dyn.toFixed(1)
+    } : null,
+    gestes:E.events.map(e=>({
+      temps_s:+e.t.toFixed(4), detections:e.n, etalement_ms:+((e.tFin-e.t)*1000).toFixed(1),
+      case_grille:e.k, position_mesure:e.pos,
+      ecart_ms:+(e.dev*1000).toFixed(1), intensite_db:+e.db.toFixed(1)
+    })),
+    detections:E.onsets.map(o=>({
+      temps_s:+o.t.toFixed(4), chef:o.chef !== false, intensite_db:+o.db.toFixed(1)
     }))
   };
   const b = new Blob([JSON.stringify(donnees, null, 2)], {type:'application/json'});
@@ -1071,6 +1266,12 @@ $('sens').addEventListener('input', e => {
   $('sensVal').textContent = PARAM.sens.toFixed(2).replace('.',',');
   if(E.worklet) E.worklet.port.postMessage({sens:PARAM.sens});
 });
+$('fusion').addEventListener('input', e => {
+  PARAM.fusion = (+e.target.value)/1000;
+  $('fusionVal').textContent = e.target.value + ' ms';
+  regrouper(); E.maj = true;
+});
+$('fenetre').addEventListener('change', e => { PARAM.fenetre = +e.target.value; E.maj = true; });
 $('ioi').addEventListener('input', e => {
   PARAM.ioi = (+e.target.value)/1000;
   $('ioiVal').textContent = e.target.value + ' ms';
