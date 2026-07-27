@@ -5,7 +5,12 @@ micro du navigateur. Destiné à l'usage pédagogique : montrer à l'élève où
 réellement ses attaques par rapport à la grille, et comment il répartit ses accents.
 
 **En ligne** : https://nmulongo-sys.github.io/analyse-attaque/
-**Statut** : v1.6 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
+**Statut** : `index.html` en v1.5 · dépôt en v1.6 (2026-07-27) • fichier HTML unique, aucune dépendance externe, hors ligne, mobile-first.
+
+> La v1.6 n'a livré que `protocole.html`, `PROTOCOLE.md` et de la documentation : elle
+> n'a pas touché `index.html`, resté au contenu de la v1.5. Numéroter le dépôt et l'app
+> ensemble a fait chercher un `index.html` v1.6 qui n'existe pas — les deux sont
+> désormais distingués ici.
 
 ## Page compagnon : protocole de capture
 
@@ -40,15 +45,21 @@ grille, la subdivision réellement jouée, et l'évolution de tout cela au fil d
 **Non mesuré** : la hauteur des notes, l'accord joué, la propreté des cordes.
 
 **Deux couches distinctes** : les *détections* (ce que le worklet trouve) et les *gestes*
-(ce que le musicien a fait). Un accord plaqué produit plusieurs détections — le balayage
-des cordes, et surtout le redéclenchement sur la résonance du corps dès la fin du temps
-réfractaire. Sur une session réelle de 132 s, 293 détections correspondaient à 163 gestes.
+(ce que le musicien a fait). Un accord plaqué produit plusieurs détections — non pas à
+cause du balayage des cordes, comme supposé jusqu'à la série A du protocole, mais du seul
+redéclenchement sur la résonance du corps dès la fin du temps réfractaire. La prise A4
+(accord plaqué six cordes) ne donne que 1,1 détection par geste, contre ×2,0 à ×3,6 sur
+corde à vide : le balayage n'y est pour rien. Sur une session réelle de 132 s, 293 détections correspondaient à 163 gestes.
 Toutes les statistiques portent sur les gestes ; les détections restent visibles sur le
 bandeau de flux, les fusionnées en trait bas pâle.
 
 ## Architecture & conventions
 
+Cette section vise la reprise sans réexplication : elle décrit ce que le code fait, les
+décisions non évidentes, et les pièges déjà payés.
+
 ### Structure du fichier
+
 
 | Bloc | Rôle |
 |---|---|
@@ -62,7 +73,16 @@ Le worklet est chargé en construisant un `Blob` à partir du `textContent` du
 C'est ce qui permet de garder **un seul fichier** tout en utilisant un worklet, qui exige
 normalement un module séparé. L'URL objet est révoquée juste après le chargement.
 
+### Prise de son
+
+
+`getUserMedia` est appelé avec `echoCancellation`, `noiseSuppression` et
+`autoGainControl` à `false`. Ces filtres écrasent les nuances de dynamique : sans cette
+désactivation, le graphique d'intensité ne mesure plus rien. Certains Android les
+réimposent malgré tout — les temps restent justes, les vélocités sont compressées.
+
 ### Chaîne de détection (worklet `detecteur-attaque`)
+
 
 Analyse par trames : `N = 1024` échantillons, saut `HOP = 256`, soit une trame toutes les
 **5,33 ms** à 48 kHz. Tampon circulaire alimenté par quanta de 128 échantillons.
@@ -95,36 +115,8 @@ Garde-fous : porte de niveau à **−58 dBFS** (rien n'est détecté sous ce seu
 
 Sensibilité et écart minimum sont modifiables à chaud via `port.postMessage`.
 
-### Dimensionnement des canevas — piège à connaître
-
-`prepare(cv)` sépare deux tailles qu'il ne faut jamais confondre :
-
-- la **hauteur CSS voulue**, figée une fois pour toutes dans `cv.dataset.h` (dupliquée dans
-  l'attribut `data-h` du balisage) ;
-- la **taille du tampon de rendu**, `cv.width` / `cv.height`, égale à la taille CSS
-  multipliée par le rapport de pixels, plafonné à 2.
-
-Écrire `cv.height` **se reflète dans l'attribut `height`**. Relire la hauteur voulue dans
-cet attribut à l'image suivante la remultiplierait donc par le rapport de pixels, à chaque
-image, indéfiniment. C'est le défaut corrigé en v1.1 ; le test `vregress` couvre ce cas.
-`cv.style.height` est fixé explicitement, sans quoi l'élément prend pour hauteur de mise
-en page la taille de son tampon.
-
-### Ordonnancement du rendu
-
-Seul le bandeau de flux est réellement animé, plafonné à ~30 images/s. Les trois autres
-graphiques et le bilan ne sont redessinés que lorsque `E.maj` est vrai — positionné à
-l'arrivée d'une attaque, après `recalculer()`, à l'effacement des mesures et au
-redimensionnement. Redessiner l'ensemble à 60 Hz ne servait qu'à chauffer le téléphone.
-
-### Prise de son
-
-`getUserMedia` est appelé avec `echoCancellation`, `noiseSuppression` et
-`autoGainControl` à `false`. Ces filtres écrasent les nuances de dynamique : sans cette
-désactivation, le graphique d'intensité ne mesure plus rien. Certains Android les
-réimposent malgré tout — les temps restent justes, les vélocités sont compressées.
-
 ### Référentiel temporel — le point le plus délicat
+
 
 Un écart à la grille n'a de sens que rapporté à la référence contre laquelle l'attaque a
 été jouée. Chaque attaque mémorise donc **sa propre ancre et son propre pas** :
@@ -146,6 +138,7 @@ les quatre points d'entrée.
 
 ### Grille et écarts
 
+
 La grille est ancrée sur `E.ancre` (instant `AudioContext.currentTime` du temps 1), avec
 un pas de `60 / tempo / subdivision`. Pour chaque attaque :
 
@@ -165,28 +158,8 @@ Le métronome utilise un ordonnanceur à anticipation (`setInterval` de 25 ms, h
 120 ms) qui programme des oscillateurs carrés : 1600 Hz sur le premier temps, 1100 Hz sur
 les autres temps, 820 Hz sur les subdivisions.
 
-### Lecture des quatre graphiques
-
-- **Placement** — l'élément central. Axe horizontal = écart à la grille en ms, axe
-  vertical = ordre chronologique (la plus récente en bas). Diamètre du point = intensité,
-  opacité = fraîcheur, cercle = premier temps de la mesure. Trait or pointillé = médiane
-  des 16 dernières attaques. Bande verte = fenêtre ±25 ms.
-- **Attaques détectées** — flux spectral (courbe pleine), seuil adaptatif (pointillé or),
-  attaques retenues (traits verticaux colorés par écart). Défilement sur ~4 s
-  (`ODF_MAX = 760` trames), la trame la plus récente au bord droit.
-- **Dynamique** — barre par attaque, hauteur = intensité crête en dB relatifs sur 36 dB,
-  couleur selon la position dans la mesure.
-- **Profil d'accentuation** — moyenne d'intensité par position de la mesure, en dB
-  relatifs au maximum. C'est le graphique qui révèle l'accentuation involontaire.
-
-### Bilan
-
-- **Écart moyen** : biais systématique, se corrige au décalage de latence.
-- **Régularité (σ)** : écart-type des écarts — la vraie mesure de stabilité, elle ne se
-  calibre pas.
-- **Dans ±25 ms**, **écart dynamique** (amplitude max − min en dB).
-
 ### Passages — la fenêtre n'enjambe jamais un silence
+
 
 Un silence supérieur à `max(4 × pas, 3 s)` ouvre un nouveau **passage**. Une fenêtre
 d'analyse à cheval sur une pause compare des gestes séparés de plusieurs secondes et fait
@@ -201,6 +174,7 @@ joué.
 
 ### Fenêtre glissante — pourquoi il n'y a pas de chiffre global
 
+
 Une séance d'entraînement n'est pas homogène. Sur la session de référence, l'accroche
 passe de 34 % à 68 %, retombe à 18 %, puis remonte à 84 % — une moyenne sur les deux
 minutes ne décrit aucun de ces moments. Les chiffres du bilan portent donc sur les
@@ -209,6 +183,7 @@ reste. La valeur de session ne sert qu'à situer la fenêtre : « tu progresses,
 au-dessus de ta moyenne ».
 
 ### Discriminateur de subdivision
+
 
 R mesuré à la période `pas/m` est exactement la **m-ième harmonique** de la distribution
 de phase. Une exécution en croches sur une grille de noires donne R₁ ≈ 0 et R₂ élevé ;
@@ -222,6 +197,7 @@ placement était bon, la grille était fausse. Sans ce test, l'outil concluait �
 de niveau là où il y avait un simple changement de valeur rythmique.
 
 ### Statistique — pourquoi elle est circulaire
+
 
 Les écarts à la grille sont des **phases**, pas des longueurs : ils sont bornés à ±pas/2
 et se referment sur eux-mêmes. La moyenne et l'écart-type linéaires y sont trompeurs. Un
@@ -240,12 +216,85 @@ Tant que `p ≥ 0,001` ou `R ≤ 0,25`, l'app **n'affiche ni biais ni régularit
 pourquoi. Le profil d'accentuation est neutralisé de la même façon : sans accroche, chaque
 attaque est rangée dans une case arbitraire de la mesure.
 
-`tempoJoue()` estime en parallèle le pas réellement joué, par recherche du maximum
-d'accroche autour de l'intervalle médian entre attaques. Indépendant de la grille, il
-répond à « à quel tempo joue-t-il », pas à « respecte-t-il le mien » — et permet de
-diagnostiquer un simple écart de tempo plutôt que de conclure à un jeu irrégulier.
+### Estimation du pas réellement joué
+
+
+`tempoJoue()` cherche le pas de grille le plus fin qui explique le jeu, indépendamment de
+la grille réglée, et le convertit en bpm via la subdivision déclarée. Il répond à « à quel
+tempo joue-t-il », pas à « respecte-t-il le mien ». Deux pièges, tous deux rencontrés en
+conditions réelles :
+
+1. **Ancrer la recherche sur l'intervalle médian** (v1.3) : dès que le jeu mêle des
+   valeurs rythmiques, la médiane glisse vers les valeurs courtes et la vraie pulsation
+   sort de la plage explorée. Session à 40 bpm, médiane 1067 ms, plage [832, 1301] ms :
+   la période réelle de 1500 ms était inatteignable, l'outil répondait 58,7 bpm.
+2. **Balayer large à résolution fixe** : la résolution nécessaire vaut environ
+   `p²/(4·durée)`. À 1 s de période sur 117 s de jeu, il faut mieux que 2 ms ; un balayage
+   logarithmique en 300 points donne 9 ms au voisinage de 1 s, accumule 420 ms de dérive
+   et manque complètement le maximum.
+
+D'où une **estimation par étages** : passe grossière sur une portée courte (20 s, où
+l'exigence de résolution est faible), puis deux affinages locaux à ±6 % en élargissant la
+portée à 60 s puis à tout l'historique. Validée sur deux sessions réelles (39,8 bpm pour
+une grille à 40, 60,1 bpm pour une grille à 60) et sur synthèses de 40 à 132 bpm.
+
+Résultat mis en cache, recalculé tous les huit gestes — le coût est d'environ 200 000
+itérations trigonométriques. **La clé de cache inclut l'instant du premier geste**, sans
+quoi elle ne s'invalide pas lorsque la série change à effectif constant.
+
+### Constantes et seuils de décision
+
+
+| Constante | Valeur | Rôle |
+|---|---|---|
+| `PARAM.sens` | 2,50 | multiplicateur du seuil médian, réglable |
+| `PARAM.ioi` | 55 ms | temps réfractaire du détecteur — **paramètre de comptage, pas de précision** (voir journal du 27/07) |
+| `PARAM.fusion` | 120 ms | fenêtre de regroupement en gestes |
+| `PARAM.fenetre` | 24 gestes | fenêtre glissante d'analyse |
+| `FEN` | ±25 ms | fenêtre « dans la cible » — **valeur posée arbitrairement, à remplacer par une fenêtre relative** |
+| `ODF_MAX` | 760 trames | ~4 s d'historique du bandeau de flux |
+| porte de niveau | −58 dBFS | ne coupe rien, même en palm mute faible (série A) |
+| échauffement | 0,45 s | convergence des crêtes par bande |
+| bande utile | 1 → 6 kHz | bins retenus pour le flux |
+| décroissance du blanchiment | 0,6 s | constante de la crête glissante par bande |
+| historique du seuil | 45 trames | ≈ 240 ms de médiane glissante |
+
+Seuils de décision, tous dans `bilan()` :
+
+| Test | Condition | Conséquence |
+|---|---|---|
+| accroche significative | `p < 0,001` **et** `R > 0,25` | sans quoi biais et régularité ne sont pas affichés |
+| subdivision autre | `R(pas/m) > 0,45` **et** `> R₁ + 0,15` | sans quoi le discriminateur se tait |
+| rupture de passage | silence `> max(4 × pas, 3 s)` | ouvre un nouveau passage |
+| qualificatif de placement | σ < 15 / 30 / 50 ms | très stable / stable / irrégulier / très irrégulier |
+| alerte dynamique | étendue > 30 dB | signale de probables fausses détections |
+| avertissement de tempo | écart > 6 % **et** subdivision ajustée = 1 | sinon le message de subdivision suffit |
+
+### Lecture des quatre graphiques
+
+
+- **Placement** — l'élément central. Axe horizontal = écart à la grille en ms, axe
+  vertical = ordre chronologique (la plus récente en bas). Diamètre du point = intensité,
+  opacité = fraîcheur, cercle = premier temps de la mesure. Trait or pointillé = médiane
+  des 16 dernières attaques. Bande verte = fenêtre ±25 ms.
+- **Attaques détectées** — flux spectral (courbe pleine), seuil adaptatif (pointillé or),
+  attaques retenues (traits verticaux colorés par écart). Défilement sur ~4 s
+  (`ODF_MAX = 760` trames), la trame la plus récente au bord droit.
+- **Dynamique** — barre par attaque, hauteur = intensité crête en dB relatifs sur 36 dB,
+  couleur selon la position dans la mesure.
+- **Profil d'accentuation** — moyenne d'intensité par position de la mesure, en dB
+  relatifs au maximum. C'est le graphique qui révèle l'accentuation involontaire.
+
+### Bilan
+
+
+- **Écart moyen** : biais systématique, se corrige au décalage de latence.
+- **Régularité (σ)** : écart-type des écarts — la vraie mesure de stabilité, elle ne se
+  calibre pas.
+- **Dans ±25 ms**, **écart dynamique** (amplitude max − min en dB).
 
 ### Export JSON (version 3)
+
 
 ```json
 {
@@ -270,7 +319,32 @@ diagnostiquer un simple écart de tempo plutôt que de conclure à un jeu irrég
 `temps_s` est l'instant brut, hors décalage de latence ; `ecart_ms` l'intègre.
 `chef` distingue le geste de ses redéclenchements absorbés.
 
+### Dimensionnement des canevas — piège à connaître
+
+
+`prepare(cv)` sépare deux tailles qu'il ne faut jamais confondre :
+
+- la **hauteur CSS voulue**, figée une fois pour toutes dans `cv.dataset.h` (dupliquée dans
+  l'attribut `data-h` du balisage) ;
+- la **taille du tampon de rendu**, `cv.width` / `cv.height`, égale à la taille CSS
+  multipliée par le rapport de pixels, plafonné à 2.
+
+Écrire `cv.height` **se reflète dans l'attribut `height`**. Relire la hauteur voulue dans
+cet attribut à l'image suivante la remultiplierait donc par le rapport de pixels, à chaque
+image, indéfiniment. C'est le défaut corrigé en v1.1 ; le test `vregress` couvre ce cas.
+`cv.style.height` est fixé explicitement, sans quoi l'élément prend pour hauteur de mise
+en page la taille de son tampon.
+
+### Ordonnancement du rendu
+
+
+Seul le bandeau de flux est réellement animé, plafonné à ~30 images/s. Les trois autres
+graphiques et le bilan ne sont redessinés que lorsque `E.maj` est vrai — positionné à
+l'arrivée d'une attaque, après `recalculer()`, à l'effacement des mesures et au
+redimensionnement. Redessiner l'ensemble à 60 Hz ne servait qu'à chauffer le téléphone.
+
 ### Palette
+
 
 Crème `#f4ece0`, papier `#fbf6ee`, encre `#382d24`, trait `#d9c9b1`, sépia `#8b6f4e`,
 or `#b8860b`. Codes d'état : avance `#4a6b8a`, cible `#6b8f5a`, retard `#a8543a`.
@@ -278,6 +352,7 @@ Titres en Cormorant Garamond, texte en Work Sans, avec repli système — aucune
 n'est chargée depuis le réseau.
 
 ### Performances mesurées au banc
+
 
 Signal synthétique de corde pincée (inharmonicité, amortissement dépendant du rang des
 partiels, transitoire de plectre), 5 tirages × 16 attaques par condition, worklet réel
@@ -293,6 +368,33 @@ instrumenté sous Node :
 À confirmer sur guitare et micro réels : le banc est synthétique.
 
 ## Journal de développement
+
+### 2026-07-27 — consolidation de la documentation
+Fusion de deux branches de documentation écrites en parallèle par deux sessions, et
+correction de ce que les mesures du protocole ont périmé. Aucun changement de code.
+
+- **Correctif : le README décrivait un algorithme supprimé.** La section statistique
+  documentait encore l'estimation du tempo ancrée sur l'intervalle médian — celle retirée
+  en v1.4 parce qu'elle répondait 58,7 bpm sur une grille à 40. Le remplacement de v1.4
+  avait échoué silencieusement : chaîne cible inexacte, aucune assertion pour le signaler.
+  L'estimation par étages est maintenant documentée dans sa propre section.
+- **Correctif : l'explication des doublons par le balayage des cordes était fausse.** La
+  prise A4 la contredit (1,1 détection par geste sur un accord plaqué). Section d'état
+  corrigée ; les entrées de journal antérieures sont conservées telles quelles, elles
+  décrivent l'état des connaissances à leur date.
+- **Versionnement dissocié** entre le dépôt et `index.html`, qui n'a pas bougé depuis la
+  v1.5. Numéroter les deux ensemble a fait chercher un fichier inexistant.
+- Sous-sections d'architecture réordonnées selon le flux du traitement — prise de son →
+  détection → référentiel → grille → analyse → rendu → export — au lieu de l'ordre
+  accidentel produit par six révisions par insertion.
+- Ajout d'une section « Constantes et seuils de décision » rassemblant les valeurs
+  jusque-là dispersées en prose, et d'une section « Contributions ».
+
+*Leçons consignées.* Toute réécriture programmatique vérifie que sa chaîne cible existe
+avant de remplacer : une substitution sans effet ne laisse aucune trace et la
+documentation dérive du code en silence. Et avant d'écrire dans un dépôt partagé par
+plusieurs sessions, relire l'état distant : cette fusion a failli écraser l'analyse du
+protocole, poussée pendant que je travaillais sur une copie antérieure.
 
 ### 2026-07-27 — analyse du premier protocole complet (13 prises)
 Dépouillement de l'export `protocole-2026-07-27-03-17-23.json` : Android Chrome, casque
@@ -565,12 +667,34 @@ bruit et le présentait comme une performance. Diagnostic et correctifs :
 
 ## Suite envisagée
 
-**Étape 2 — vérification d'accord.** Chromagramme sur fenêtre longue (8192 points,
-≈ 2,7 Hz/bin, nécessaire pour séparer un demi-ton dans le grave), déclenché par l'attaque
-détectée à l'étape 1. Dans un contexte pédagogique l'accord attendu est connu : le
-problème n'est pas la *détection* en classe ouverte mais la *vérification* contre un
-gabarit, plus fiable, et capable d'indiquer quelle corde manque. Verdict ternaire :
-conforme / confusion identifiée / indéterminé — jamais de verdict autoritaire faux.
+**Fenêtre de tolérance relative.** `FEN` vaut ±25 ms, valeur posée arbitrairement : juste
+par accident autour de 375–400 ms, absurdement sévère à 1000 ms, laxiste à 250 ms. Le
+dépouillement du premier protocole donne σ ≈ 6 % de l'intervalle, stable de 333 à 1000 ms
+sur sept mesures indépendantes. Une fenêtre relative à 6 % est proposée — **non
+implémentée**, la loi demande confirmation sur une seconde série.
+
+**Retirer `ecart_min_ms` de l'interface.** Le balayage de 30 à 600 ms montre que l'accroche
+n'en dépend pas alors que le nombre de gestes double : paramètre de comptage, pas de
+précision. À figer à 120 ms et à ne plus exposer.
+
+**Calibration par boucle acoustique en tête de séance.** Le biais reste inexploitable, de
++130 à +440 ms selon les prises, et l'`outputLatency` déclaré par Chrome Android (4 ms au
+casque) est invraisemblable. Sans calibration, seule la dispersion est lisible.
+
+**Vérification d'accord.** Chromagramme sur fenêtre longue (8192 points, ≈ 2,7 Hz/bin,
+nécessaire pour séparer un demi-ton dans le grave), déclenché par l'attaque détectée. Dans
+un contexte pédagogique l'accord attendu est connu : le problème n'est pas la *détection*
+en classe ouverte mais la *vérification* contre un gabarit, plus fiable, et capable
+d'indiquer quelle corde manque. Verdict ternaire : conforme / confusion identifiée /
+indéterminé — jamais de verdict autoritaire faux.
+
+## Contributions
+
+Signalements et suggestions par *issue*, propositions de code par *pull request*, relues au
+cas par cas. Trois conventions valent pour toute proposition touchant l'analyse : aucune
+statistique n'est affichée tant que sa significativité n'est pas établie ; tout changement
+de comportement du détecteur s'accompagne d'un banc de test reproductible ; et l'état
+distant du dépôt se relit avant écriture, plusieurs sessions pouvant y travailler.
 
 ## Références
 
